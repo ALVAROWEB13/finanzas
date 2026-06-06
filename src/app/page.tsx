@@ -594,6 +594,72 @@ export default function TobiramaFinancialOS() {
     ]);
   };
 
+  const handleDeleteBudget = async (id: string) => {
+    const itemToDelete = budgetItems.find((item) => item.id === id);
+    if (!itemToDelete) return;
+
+    if (!confirm(`¿Estás seguro de que deseas eliminar la categoría "${itemToDelete.category}"? Esto borrará el registro de presupuesto asociado.`)) {
+      return;
+    }
+
+    // Optimistically update locally
+    setBudgetItems((prev) => prev.filter((item) => item.id !== id));
+
+    try {
+      const res = await fetch(`/api/budget?id=${id}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) {
+        throw new Error("Failed to delete budget item on DB");
+      }
+      fetchFromServer();
+      
+      const timeStr = new Date().toLocaleTimeString();
+      setTerminalLogs((prev) => [
+        ...prev,
+        `[${timeStr}] CATEGORÍA: La categoría '${itemToDelete.category}' fue eliminada del presupuesto.`
+      ]);
+    } catch (err) {
+      console.error("Failed to delete budget item from DB:", err);
+    }
+  };
+
+  const handleResetDb = async () => {
+    if (!confirm("⚠️ ADVERTENCIA MÁXIMA: ¿Estás seguro de restablecer por completo la base de datos? Esto eliminará permanentemente todas tus transacciones y pondrá todos los presupuestos en $0. Esta acción es irreversible.")) {
+      return;
+    }
+
+    // Optimistic UI updates
+    setTransactions([]);
+    setBudgetItems((prev) =>
+      prev.map((item) => ({
+        ...item,
+        assigned: 0,
+        paid: 0,
+      }))
+    );
+
+    try {
+      const res = await fetch("/api/reset", {
+        method: "POST",
+      });
+      if (!res.ok) {
+        throw new Error("Failed to reset DB on server");
+      }
+      fetchFromServer();
+
+      const timeStr = new Date().toLocaleTimeString();
+      setTerminalLogs((prev) => [
+        ...prev,
+        `[${timeStr}] MANTENIMIENTO: Base de datos restablecida correctamente. Sistema limpio.`
+      ]);
+      alert("La base de datos ha sido restablecida con éxito. Todo el sistema está en $0.");
+    } catch (err) {
+      console.error("Failed to reset database:", err);
+      alert("Hubo un error al restablecer la base de datos.");
+    }
+  };
+
   // --- VOICE SPEECH RECOGNITION PARSER (Web Speech API) ---
   const handleVoiceListen = () => {
     const SpeechRecognitionClass =
@@ -2037,12 +2103,18 @@ export default function TobiramaFinancialOS() {
                                   {isPaid ? "PAGADO" : "PENDIENTE"}
                                 </span>
                               </td>
-                              <td className="px-6 py-4.5 text-center">
+                              <td className="px-6 py-4.5 text-center space-x-2">
                                 <button
                                   onClick={() => handleEditBudget(item)}
-                                  className="px-3 py-1 rounded bg-zinc-900 border border-white/[0.04] hover:bg-zinc-800 text-xs font-semibold text-slate-300 transition-all cursor-pointer"
+                                  className="px-2.5 py-1 rounded bg-zinc-900 border border-white/[0.04] hover:bg-zinc-800 text-xs font-semibold text-slate-300 transition-all cursor-pointer"
                                 >
                                   Editar
+                                </button>
+                                <button
+                                  onClick={() => handleDeleteBudget(item.id)}
+                                  className="px-2.5 py-1 rounded bg-red-950/20 border border-red-900/30 hover:bg-red-950/45 text-xs font-semibold text-red-400 transition-all cursor-pointer"
+                                >
+                                  Borrar
                                 </button>
                               </td>
                             </tr>
@@ -2050,6 +2122,31 @@ export default function TobiramaFinancialOS() {
                         })}
                       </tbody>
                     </table>
+                  </div>
+                </div>
+
+                {/* Database Control Panel */}
+                <div className="glass-panel rounded-2xl p-6 bg-[#0a0b0d]/50 border-white/[0.04] mt-6 space-y-4">
+                  <div className="flex justify-between items-center border-b border-white/[0.04] pb-2">
+                    <div>
+                      <span className="text-[9px] text-slate-500 uppercase tracking-widest font-mono block font-semibold">PANEL ADMINISTRATIVO</span>
+                      <h4 className="text-sm font-bold text-white mt-1">Mantenimiento de Base de Datos</h4>
+                    </div>
+                    <span className="text-[10px] text-slate-500 font-mono">
+                      Estado: <span className="text-emerald-400 font-bold">CONECTADO</span>
+                    </span>
+                  </div>
+
+                  <div className="flex flex-col sm:flex-row gap-4 items-center justify-between">
+                    <p className="text-xs text-slate-400 max-w-lg leading-normal font-mono">
+                      Para limpiar el sistema y comenzar de cero, puedes restablecer la base de datos. Esto eliminará de forma irreversible todas las transacciones registradas y reestablecerá los presupuestos de las categorías base a $0.
+                    </p>
+                    <button
+                      onClick={handleResetDb}
+                      className="px-5 py-3 rounded-xl bg-red-650/10 hover:bg-red-650/20 border border-red-500/25 hover:border-red-500/40 text-red-400 hover:text-red-300 font-bold text-xs uppercase tracking-wider transition-all cursor-pointer flex-shrink-0"
+                    >
+                      Restablecer Sistema (Borrar Todo) ⚠️
+                    </button>
                   </div>
                 </div>
               </motion.div>

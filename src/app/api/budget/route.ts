@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { initDb, getBudgetItems, updateBudgetItem } from "@/lib/db";
+import { initDb, getBudgetItems, updateBudgetItem, deleteBudgetItem } from "@/lib/db";
 
 export async function GET() {
   try {
@@ -23,6 +23,22 @@ export async function POST(req: Request) {
     return NextResponse.json({ success: true });
   } catch (err: any) {
     console.error("API POST Budget failed:", err);
+    return NextResponse.json({ error: err.message }, { status: 500 });
+  }
+}
+
+export async function DELETE(req: Request) {
+  try {
+    await initDb();
+    const url = new URL(req.url);
+    const id = url.searchParams.get("id");
+    if (!id) {
+      return NextResponse.json({ error: "Missing budget item ID" }, { status: 400 });
+    }
+    await deleteBudgetItem(id);
+    return NextResponse.json({ success: true });
+  } catch (err: any) {
+    console.error("API DELETE Budget failed:", err);
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }

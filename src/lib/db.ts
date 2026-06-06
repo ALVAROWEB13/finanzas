@@ -307,3 +307,56 @@ export const updateBudgetItem = async (id: string, assigned: number, paid: numbe
     writeJson(data);
   }
 };
+
+export const deleteBudgetItem = async (id: string): Promise<void> => {
+  const pgPool = getPool();
+  if (pgPool) {
+    await pgPool.query("DELETE FROM budget_items WHERE id = $1", [id]);
+  } else {
+    const data = readJson();
+    data.budgetItems = data.budgetItems.filter((item: BudgetItem) => item.id !== id);
+    writeJson(data);
+  }
+};
+
+export const resetDb = async (): Promise<void> => {
+  const pgPool = getPool();
+  const defaultEmptyBudgetItems = [
+    "Vivienda",
+    "Claro hogar",
+    "Datos movistar",
+    "Gym",
+    "Transporte",
+    "Aseo personal",
+    "Netflix",
+    "Google",
+    "Seguro de vida",
+    "Salidas",
+    "Ahorro",
+    "Ahorro 1",
+    "CREDITO"
+  ].map((cat, i) => ({
+    id: `b${i + 1}`,
+    category: cat,
+    item: cat,
+    assigned: 0,
+    paid: 0
+  }));
+
+  if (pgPool) {
+    await pgPool.query("TRUNCATE transactions");
+    await pgPool.query("TRUNCATE budget_items");
+    for (const item of defaultEmptyBudgetItems) {
+      await pgPool.query(
+        "INSERT INTO budget_items (id, category, item, assigned, paid) VALUES ($1, $2, $3, $4, $5)",
+        [item.id, item.category, item.item, item.assigned, item.paid]
+      );
+    }
+  } else {
+    writeJson({
+      budgetItems: defaultEmptyBudgetItems,
+      transactions: []
+    });
+  }
+};
+
