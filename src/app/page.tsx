@@ -60,14 +60,6 @@ interface SystemNode {
   statusColor: string;
 }
 
-interface EntityData {
-  name: string;
-  status: "ACTIVA" | "EN PAUSA";
-  statusColor: string;
-  volume: number;
-  riskSegments: boolean[]; // true = green/red, false = gray
-}
-
 // --- CONSTANTS ---
 const CATEGORIES: Category[] = [
   "Vivienda",
@@ -103,8 +95,8 @@ export default function TobiramaFinancialOS() {
   const [passwordInput, setPasswordInput] = useState("");
   const [loginError, setLoginError] = useState(false);
 
-  // --- MOCK INITIAL STATE ---
-  const INITIAL_INCOME = 5976687; // Base Global Income
+  // --- REAL MOCK INITIAL STATE ---
+  const INITIAL_INCOME = 5976687; // Base Global Income ($5.976.687 COP)
 
   const [budgetItems, setBudgetItems] = useState<BudgetItem[]>([
     {
@@ -233,22 +225,16 @@ export default function TobiramaFinancialOS() {
     }
   }, [terminalLogs]);
 
-  // --- STATIC METRICS (Matching Screen 1 entities & alpha) ---
+  // --- SYSTEM MODULES METRICS (Spanish health indicators) ---
   const systemNodes: SystemNode[] = [
-    { name: "Ledger V.2", status: "ONLINE", statusColor: "text-emerald-400" },
-    { name: "API Bridge", status: "ONLINE", statusColor: "text-emerald-400" },
-    { name: "Sync Module", status: "ESTABLE", statusColor: "text-yellow-400" },
-    { name: "Auth Guard", status: "SEGURO", statusColor: "text-emerald-400" },
-  ];
-
-  const recentEntities: EntityData[] = [
-    { name: "Blackwood Assets", status: "ACTIVA", statusColor: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20", volume: 2450000, riskSegments: [true, false, false] },
-    { name: "Neon Ventures", status: "ACTIVA", statusColor: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20", volume: 890200, riskSegments: [true, true, false] },
-    { name: "CryptoHold Q1", status: "EN PAUSA", statusColor: "bg-amber-500/10 text-amber-400 border-amber-500/20", volume: 0, riskSegments: [true, true, true] }
+    { name: "Libro Mayor V.2", status: "ONLINE", statusColor: "text-emerald-400" },
+    { name: "Puente API", status: "ONLINE", statusColor: "text-emerald-400" },
+    { name: "Módulo Sincro", status: "ESTABLE", statusColor: "text-yellow-400" },
+    { name: "Filtro Seguridad", status: "SEGURO", statusColor: "text-emerald-400" },
   ];
 
   // --- REACTIVE COMPUTATIONS ---
-  // Liquidez real disponible (Termómetro de Liquidez)
+  // Real Liquidez de Bolsillo (Termómetro de Liquidez)
   const pocketLiquidity = useMemo(() => {
     const totalIncomes = transactions
       .filter((t) => t.type === "Ingreso")
@@ -260,6 +246,13 @@ export default function TobiramaFinancialOS() {
 
     return totalIncomes - totalExpensesAndReserves;
   }, [transactions]);
+
+  // Real Patrimonio Neto: Caja Libre + Ahorros Nu/Lulo
+  const netWorthTotal = useMemo(() => {
+    const savingsItem = budgetItems.find((item) => item.category === "Ahorro / Reserva");
+    const savingsAmount = savingsItem ? savingsItem.paid : 0;
+    return pocketLiquidity + savingsAmount;
+  }, [pocketLiquidity, budgetItems]);
 
   // Deuda Erradicada
   const debtMetrics = useMemo(() => {
@@ -277,12 +270,10 @@ export default function TobiramaFinancialOS() {
     };
   }, [budgetItems]);
 
-  // Burn Rate mensual (gasto acumulado)
+  // Burn Rate mensual (gasto acumulado real de compromisos pagados)
   const monthlyBurn = useMemo(() => {
     return budgetItems.reduce((sum, item) => sum + item.paid, 0);
   }, [budgetItems]);
-
-
 
   // Output Distribution Matrix
   const distributionMatrix = useMemo(() => {
@@ -296,14 +287,64 @@ export default function TobiramaFinancialOS() {
     });
   }, [budgetItems]);
 
+  // --- DYNAMIC ASSET TRAJECTORY GENERATOR (SVG-based Wave Chart) ---
+  const { chartPathData, trajectoryPoints } = useMemo(() => {
+    // Sort transactions chronologically to build day-by-day trajectory
+    const sortedTxs = [...transactions].sort((a, b) => a.date.localeCompare(b.date));
+    
+    let currentBalance = 0;
+    const points: { date: string; balance: number }[] = [];
+    
+    sortedTxs.forEach((tx) => {
+      if (tx.type === "Ingreso") {
+        currentBalance += tx.amount;
+      } else {
+        currentBalance -= tx.amount;
+      }
+      // Ensure we register balance points
+      points.push({ date: tx.date, balance: currentBalance });
+    });
+
+    if (points.length === 0) return { chartPathData: { linePath: "", areaPath: "", points: [] }, trajectoryPoints: [] };
+    
+    const maxVal = Math.max(...points.map(p => p.balance), INITIAL_INCOME);
+    const minVal = 0;
+    const valRange = maxVal - minVal || 1;
+    
+    const width = 500;
+    const height = 150; 
+    
+    const svgPoints = points.map((p, index) => {
+      const x = points.length > 1 ? (index / (points.length - 1)) * width : width / 2;
+      const y = height - ((p.balance - minVal) / valRange) * (height - 20) - 10;
+      return { x, y, balance: p.balance, date: p.date };
+    });
+    
+    // Draw smooth line path
+    let linePath = "";
+    if (svgPoints.length > 0) {
+      linePath = `M ${svgPoints[0].x} ${svgPoints[0].y}`;
+      for (let i = 1; i < svgPoints.length; i++) {
+        linePath += ` L ${svgPoints[i].x} ${svgPoints[i].y}`;
+      }
+    }
+    
+    const areaPath = linePath 
+      ? `${linePath} L ${svgPoints[svgPoints.length - 1].x} ${height} L ${svgPoints[0].x} ${height} Z`
+      : "";
+      
+    return { 
+      chartPathData: { linePath, areaPath, points: svgPoints }, 
+      trajectoryPoints: points 
+    };
+  }, [transactions, INITIAL_INCOME]);
+
   // --- HANDLERS ---
   const handleLoginSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    // Validate credentials: both 'tobirama2026' and '1208' are valid keys
     if (passwordInput === "tobirama2026" || passwordInput === "1208") {
       setIsAuthenticated(true);
       setLoginError(false);
-      // Log successful login
       const now = new Date().toLocaleTimeString();
       setTerminalLogs((prev) => [
         ...prev,
@@ -347,7 +388,6 @@ export default function TobiramaFinancialOS() {
       };
       setTransactions((prev) => [adjustmentTx, ...prev]);
 
-      // Log the adjustment
       const timeStr = new Date().toLocaleTimeString();
       setTerminalLogs((prev) => [
         ...prev,
@@ -395,14 +435,12 @@ export default function TobiramaFinancialOS() {
       );
     }
 
-    // Append terminal logs
     const timeStr = new Date().toLocaleTimeString();
     setTerminalLogs((prev) => [
       ...prev,
       `[${timeStr}] TRANSACCIÓN: Registro flash de ${formatCOP(amountVal)} en la categoría '${quickCategory}' añadido con éxito.`
     ]);
 
-    // Show success notification & reset amount
     setQuickSuccessMsg(true);
     setQuickAmount("0");
     setQuickDescription("");
@@ -420,7 +458,7 @@ export default function TobiramaFinancialOS() {
 
     if (cmd === "/audit") {
       newLogs.push(`[${timeStr}] TERMINAL: Iniciando auditoría profunda de activos...`);
-      newLogs.push(`[${timeStr}] TERMINAL: Total Ingresos: ${formatCOP(INITIAL_INCOME)} | Burn Mensual: ${formatCOP(monthlyBurn)}`);
+      newLogs.push(`[${timeStr}] TERMINAL: Total Ingresos: ${formatCOP(INITIAL_INCOME)} | Gasto Mensual: ${formatCOP(monthlyBurn)}`);
       newLogs.push(`[${timeStr}] TERMINAL: Liquidez neta verificada: ${formatCOP(pocketLiquidity)}. Todo en orden.`);
     } else if (cmd === "/clear") {
       setTerminalLogs([]);
@@ -456,7 +494,6 @@ export default function TobiramaFinancialOS() {
     setTerminalInput("");
   };
 
-  // Helper values for digits addition in flash form
   const handleDigitPress = (digit: string) => {
     setQuickAmount((prev) => {
       if (prev === "0") return digit;
@@ -474,23 +511,23 @@ export default function TobiramaFinancialOS() {
   // --- RENDER LOGIN GATEWAY ---
   if (!isAuthenticated) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-[#070b13] p-4 font-sans text-slate-100 select-none">
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgba(59,130,246,0.08),transparent_70%)] pointer-events-none" />
+      <div className="flex items-center justify-center min-h-screen bg-black p-4 font-sans text-slate-100 select-none">
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgba(255,255,255,0.01),transparent_70%)] pointer-events-none" />
         
         <motion.div
-          initial={{ opacity: 0, scale: 0.95 }}
+          initial={{ opacity: 0, scale: 0.96 }}
           animate={{ opacity: 1, scale: 1 }}
-          transition={{ duration: 0.5 }}
-          className="w-full max-w-md bg-[#0c1221]/90 border border-white/[0.06] rounded-3xl p-8 backdrop-blur-xl shadow-2xl relative"
+          transition={{ duration: 0.4 }}
+          className="w-full max-w-md bg-[#0a0b0d]/90 border border-white/[0.04] rounded-3xl p-8 backdrop-blur-xl shadow-2xl relative"
         >
           <div className="flex flex-col items-center text-center space-y-6">
-            <div className="h-16 w-16 rounded-2xl bg-blue-600/10 border border-blue-500/20 flex items-center justify-center">
-              <Lock className="h-7 w-7 text-blue-400" />
+            <div className="h-16 w-16 rounded-2xl bg-white/[0.02] border border-white/[0.08] flex items-center justify-center">
+              <Lock className="h-7 w-7 text-white" />
             </div>
 
             <div>
               <h2 className="text-xl font-bold tracking-wider uppercase text-slate-200">Tobirama OS</h2>
-              <p className="text-xs text-blue-400/80 font-mono tracking-wider mt-1">SISTEMA CONTROL DE ACTIVOS</p>
+              <p className="text-xs text-slate-500 font-mono tracking-wider mt-1">SISTEMA CONTROL DE ACTIVOS</p>
             </div>
 
             <form onSubmit={handleLoginSubmit} className="w-full space-y-4 pt-4">
@@ -500,7 +537,7 @@ export default function TobiramaFinancialOS() {
                   placeholder="Ingrese Clave de Acceso"
                   value={passwordInput}
                   onChange={(e) => setPasswordInput(e.target.value)}
-                  className="w-full px-5 py-4 rounded-2xl bg-[#090d16] border border-white/10 text-center font-mono tracking-widest text-slate-200 focus:border-blue-500/50 text-base"
+                  className="w-full px-5 py-4 rounded-2xl bg-black border border-white/[0.06] text-center font-mono tracking-widest text-slate-200 focus:border-blue-500/40 text-base"
                   autoFocus
                   required
                 />
@@ -510,7 +547,7 @@ export default function TobiramaFinancialOS() {
                 <motion.div
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
-                  className="text-xs text-red-400 font-mono"
+                  className="text-xs text-red-500 font-mono"
                 >
                   Clave inválida. Acceso restringido.
                 </motion.div>
@@ -518,13 +555,13 @@ export default function TobiramaFinancialOS() {
 
               <button
                 type="submit"
-                className="w-full py-4 rounded-2xl bg-blue-600 hover:bg-blue-500 text-sm font-semibold uppercase tracking-widest transition-all duration-300 shadow-lg shadow-blue-600/15 active:scale-[0.98] cursor-pointer"
+                className="w-full py-4 rounded-2xl bg-white hover:bg-slate-200 text-black text-sm font-bold uppercase tracking-widest transition-all duration-300 shadow-md active:scale-[0.98] cursor-pointer"
               >
                 AUTENTICAR OS
               </button>
             </form>
 
-            <div className="text-[10px] text-slate-500 font-mono pt-4 leading-relaxed">
+            <div className="text-[10px] text-slate-600 font-mono pt-4 leading-relaxed">
               ID de Terminal: {new Date().getFullYear()}-OS-TOBIRAMA<br/>
               Acceso restringido a personal de Alta Gerencia.
             </div>
@@ -536,16 +573,13 @@ export default function TobiramaFinancialOS() {
 
   // --- RENDER MAIN OS APP ---
   return (
-    <div className="flex min-h-screen bg-[#070b13] text-[#f8fafc] overflow-hidden select-none">
-      {/* Background radial overlays */}
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(34,197,94,0.02),transparent_50%)] pointer-events-none" />
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_bottom_left,rgba(59,130,246,0.02),transparent_50%)] pointer-events-none" />
-
+    <div className="flex min-h-screen bg-black text-[#f8fafc] overflow-hidden select-none font-sans">
+      
       {/* --- SIDEBAR DESKTOP --- */}
-      <aside className="hidden md:flex flex-col w-24 border-r border-white/5 bg-[#050912]/80 backdrop-blur-xl p-6 flex-shrink-0 z-20 items-center justify-between">
+      <aside className="hidden md:flex flex-col w-24 border-r border-white/[0.04] bg-[#050505] p-6 flex-shrink-0 z-20 items-center justify-between">
         <div className="flex flex-col items-center gap-10">
           {/* Logo Brand Emblem (Screen 2: big letter T) */}
-          <div className="h-12 w-12 rounded-xl bg-blue-600/20 border border-blue-500/30 flex items-center justify-center font-bold font-mono text-xl text-blue-400">
+          <div className="h-12 w-12 rounded-xl bg-white/[0.02] border border-white/[0.08] flex items-center justify-center font-bold font-mono text-xl text-white">
             T
           </div>
 
@@ -564,7 +598,7 @@ export default function TobiramaFinancialOS() {
                   onClick={() => setActiveView(item.id as "dashboard" | "reporting" | "tracker" | "audit")}
                   title={item.label}
                   className={`relative h-12 w-12 rounded-xl flex items-center justify-center transition-all duration-300 ${
-                    isActive ? "text-white bg-blue-600/25 border border-blue-500/35" : "text-slate-500 hover:text-slate-200 hover:bg-white/5"
+                    isActive ? "text-white bg-white/[0.04] border border-white/[0.08]" : "text-slate-600 hover:text-slate-300 hover:bg-white/[0.02]"
                   }`}
                 >
                   <Icon className="h-5 w-5" />
@@ -575,7 +609,7 @@ export default function TobiramaFinancialOS() {
         </div>
 
         {/* Bottom utility */}
-        <div className="h-12 w-12 rounded-xl flex items-center justify-center text-slate-500 hover:text-slate-200 cursor-pointer">
+        <div className="h-12 w-12 rounded-xl flex items-center justify-center text-slate-600 hover:text-slate-300 cursor-pointer">
           <HelpCircle className="h-5 w-5" />
         </div>
       </aside>
@@ -589,19 +623,19 @@ export default function TobiramaFinancialOS() {
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={() => setIsSidebarOpen(false)}
-              className="fixed inset-0 bg-black/60 backdrop-blur-sm z-30 md:hidden"
+              className="fixed inset-0 bg-black/80 backdrop-blur-sm z-30 md:hidden"
             />
             <motion.div
               initial={{ x: "-100%" }}
               animate={{ x: 0 }}
               exit={{ x: "-100%" }}
               transition={{ type: "spring", damping: 25, stiffness: 200 }}
-              className="fixed inset-y-0 left-0 w-72 bg-[#050912] border-r border-white/5 p-6 z-40 md:hidden flex flex-col justify-between"
+              className="fixed inset-y-0 left-0 w-72 bg-black border-r border-white/[0.04] p-6 z-40 md:hidden flex flex-col justify-between"
             >
               <div className="space-y-8">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
-                    <div className="h-10 w-10 rounded-xl bg-blue-600/20 border border-blue-500/30 flex items-center justify-center font-bold text-xl text-blue-400">
+                    <div className="h-10 w-10 rounded-xl bg-white/[0.02] border border-white/[0.08] flex items-center justify-center font-bold text-xl text-white">
                       T
                     </div>
                     <span className="text-sm font-semibold tracking-wider uppercase text-slate-200">Tobirama OS</span>
@@ -631,7 +665,7 @@ export default function TobiramaFinancialOS() {
                           setIsSidebarOpen(false);
                         }}
                         className={`flex items-center gap-3 w-full px-4 py-3.5 rounded-xl text-sm font-medium transition-all ${
-                          isActive ? "text-white bg-blue-600/20 border border-blue-500/20" : "text-slate-400 hover:text-slate-200"
+                          isActive ? "text-white bg-white/[0.04] border border-white/[0.08]" : "text-slate-500 hover:text-slate-300"
                         }`}
                       >
                         <Icon className="h-5 w-5" />
@@ -642,7 +676,7 @@ export default function TobiramaFinancialOS() {
                 </nav>
               </div>
 
-              <div className="h-12 w-12 rounded-xl flex items-center justify-center text-slate-500 hover:text-slate-200 cursor-pointer">
+              <div className="h-12 w-12 rounded-xl flex items-center justify-center text-slate-600 hover:text-slate-300 cursor-pointer">
                 <HelpCircle className="h-5 w-5" />
               </div>
             </motion.div>
@@ -651,9 +685,9 @@ export default function TobiramaFinancialOS() {
       </AnimatePresence>
 
       {/* --- MAIN PAGE CONTENT --- */}
-      <div className="flex-1 flex flex-col min-w-0 overflow-y-auto">
+      <div className="flex-1 flex flex-col min-w-0 overflow-y-auto bg-black">
         {/* --- HEADER --- */}
-        <header className="sticky top-0 bg-[#070b13]/90 backdrop-blur-md border-b border-white/5 px-6 py-4 flex items-center justify-between z-10">
+        <header className="sticky top-0 bg-black/90 backdrop-blur-md border-b border-white/[0.04] px-6 py-4 flex items-center justify-between z-10">
           <div className="flex items-center gap-4">
             <button
               onClick={() => setIsSidebarOpen(true)}
@@ -665,26 +699,26 @@ export default function TobiramaFinancialOS() {
               <h2 className="text-sm font-bold tracking-widest text-white uppercase">Tobirama OS</h2>
               
               {/* Internal view selector tabs (Screen 1 style) */}
-              <div className="flex gap-2 p-0.5 bg-slate-950/40 rounded-lg border border-white/5">
+              <div className="flex gap-1 p-0.5 bg-[#0a0a0c] rounded-lg border border-white/[0.04]">
                 {[
-                  { id: "dashboard", label: "Dashboard" },
-                  { id: "reporting", label: "Reporting" },
+                  { id: "dashboard", label: "Torre de Control" },
+                  { id: "reporting", label: "Reportes" },
                   { id: "tracker", label: "Libro Diario" },
-                  { id: "audit", label: "Audit" }
+                  { id: "audit", label: "Auditoría" }
                 ].map((tab) => {
                   const isActive = activeView === tab.id;
                   return (
                     <button
                       key={tab.id}
                       onClick={() => setActiveView(tab.id as "dashboard" | "reporting" | "tracker" | "audit")}
-                      className={`relative px-4 py-1.5 rounded-md text-xs font-semibold tracking-wide transition-all ${
-                        isActive ? "text-white font-bold" : "text-slate-400 hover:text-slate-200"
+                      className={`relative px-4 py-1.5 rounded-md text-xs font-semibold tracking-wide transition-all cursor-pointer ${
+                        isActive ? "text-white font-bold" : "text-slate-500 hover:text-slate-300"
                       }`}
                     >
                       {isActive && (
                         <motion.div
                           layoutId="headerActivePill"
-                          className="absolute inset-0 bg-blue-600/10 border border-blue-500/20 rounded-md"
+                          className="absolute inset-0 bg-white/[0.03] border border-white/[0.08] rounded-md"
                           transition={{ type: "spring", stiffness: 380, damping: 30 }}
                         />
                       )}
@@ -699,36 +733,36 @@ export default function TobiramaFinancialOS() {
           {/* Right Header items matching screen 1: Search, Notification, History, settings, User */}
           <div className="flex items-center gap-4">
             <div className="relative hidden md:block">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-500" />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-600" />
               <input
                 type="text"
-                placeholder="Global Search..."
-                className="w-48 pl-9 pr-4 py-1.5 rounded-lg border border-white/5 bg-[#090d16] text-xs font-mono focus:border-blue-500/40 focus:w-60"
+                placeholder="Buscar global..."
+                className="w-48 pl-9 pr-4 py-1.5 rounded-lg border border-white/[0.04] bg-[#0a0b0d] text-xs font-mono focus:border-white/[0.1] focus:w-60 text-slate-300"
               />
             </div>
 
-            <button className="relative p-2 rounded-lg hover:bg-white/5 text-slate-400 hover:text-white transition-colors">
+            <button className="relative p-2 rounded-lg hover:bg-white/5 text-slate-500 hover:text-slate-300 transition-colors">
               <span className="absolute top-1.5 right-1.5 h-1.5 w-1.5 rounded-full bg-blue-500" />
               <Bell className="h-4 w-4" />
             </button>
 
-            <button className="p-2 rounded-lg hover:bg-white/5 text-slate-400 hover:text-white transition-colors">
+            <button className="p-2 rounded-lg hover:bg-white/5 text-slate-500 hover:text-slate-300 transition-colors">
               <History className="h-4 w-4" />
             </button>
 
-            <button className="p-2 rounded-lg hover:bg-white/5 text-slate-400 hover:text-white transition-colors">
+            <button className="p-2 rounded-lg hover:bg-white/5 text-slate-500 hover:text-slate-300 transition-colors">
               <Sliders className="h-4 w-4" />
             </button>
 
             {/* Profile Avatar mockup */}
-            <div className="h-7 w-7 rounded-full bg-gradient-to-tr from-blue-600 to-indigo-500 border border-white/10 flex items-center justify-center font-bold text-[10px] text-white">
+            <div className="h-7 w-7 rounded-full bg-gradient-to-tr from-zinc-700 to-zinc-600 border border-white/[0.08] flex items-center justify-center font-bold text-[10px] text-white">
               CF
             </div>
           </div>
         </header>
 
         {/* --- VIEW ROUTING --- */}
-        <main className="flex-1 p-6 md:p-8 max-w-7xl w-full mx-auto space-y-8">
+        <main className="flex-1 p-6 md:p-8 max-w-7xl w-full mx-auto space-y-8 bg-black">
           <AnimatePresence mode="wait">
             
             {/* --- VISTA A: TORRE DE CONTROL (DASHBOARD) --- */}
@@ -744,64 +778,64 @@ export default function TobiramaFinancialOS() {
                 {/* Visual Top stats cards matching Screen 1 */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                   
-                  {/* Card 1: Net Worth Total (Activos Totales) */}
-                  <div className="relative glass-panel rounded-2xl p-6 flex flex-col justify-between min-h-[160px] group transition-all hover:border-emerald-500/20">
+                  {/* Card 1: Patrimonio Neto (Activos Totales) */}
+                  <div className="relative glass-panel rounded-2xl p-6 flex flex-col justify-between min-h-[160px] group transition-all hover:border-emerald-500/20 bg-[#0a0b0d]/50 border-white/[0.04]">
                     <div className="flex justify-between items-start">
                       <div>
-                        <span className="text-[10px] text-slate-400 uppercase tracking-widest font-mono">NET WORTH TOTAL</span>
+                        <span className="text-[10px] text-slate-500 uppercase tracking-widest font-mono font-semibold">PATRIMONIO NETO</span>
                         <div className="text-3xl font-bold font-mono text-white mt-3">
-                          {formatCOP(pocketLiquidity + INITIAL_INCOME)}
+                          {formatCOP(netWorthTotal)}
                         </div>
                       </div>
-                      <div className="h-10 w-10 rounded-xl bg-emerald-600/10 border border-emerald-500/20 flex items-center justify-center">
+                      <div className="h-10 w-10 rounded-xl bg-emerald-600/5 border border-emerald-500/10 flex items-center justify-center">
                         <TrendingUp className="h-5 w-5 text-emerald-400" />
                       </div>
                     </div>
                     <div className="flex items-center gap-2 mt-4 text-[10px] font-mono">
                       <span className="text-emerald-400">+4.2%</span>
-                      <span className="text-slate-500">vs mes anterior</span>
+                      <span className="text-slate-600">vs mes anterior</span>
                       <svg className="h-6 w-20 ml-auto" viewBox="0 0 100 30" fill="none">
                         <path d="M0,25 Q15,10 30,18 T60,5 T90,28 T100,10" stroke="#10b981" strokeWidth="2" fill="none"/>
                       </svg>
                     </div>
                   </div>
 
-                  {/* Card 2: Monthly Burn (Burn Rate) */}
-                  <div className="relative glass-panel rounded-2xl p-6 flex flex-col justify-between min-h-[160px] group transition-all hover:border-red-500/20">
+                  {/* Card 2: Burnout Mensual (Gasto Mensual) */}
+                  <div className="relative glass-panel rounded-2xl p-6 flex flex-col justify-between min-h-[160px] group transition-all hover:border-red-500/20 bg-[#0a0b0d]/50 border-white/[0.04]">
                     <div className="flex justify-between items-start">
                       <div>
-                        <span className="text-[10px] text-slate-400 uppercase tracking-widest font-mono">MONTHLY BURN</span>
+                        <span className="text-[10px] text-slate-500 uppercase tracking-widest font-mono font-semibold">GASTO MENSUAL</span>
                         <div className="text-3xl font-bold font-mono text-white mt-3">
                           {formatCOP(monthlyBurn)}
                         </div>
                       </div>
-                      <div className="h-10 w-10 rounded-xl bg-red-600/10 border border-red-500/20 flex items-center justify-center font-bold font-mono text-xs text-red-400">
-                        MB
+                      <div className="h-10 w-10 rounded-xl bg-red-600/5 border border-red-500/10 flex items-center justify-center font-bold font-mono text-xs text-red-400">
+                        GM
                       </div>
                     </div>
                     <div className="mt-4">
-                      <div className="flex justify-between text-[9px] text-slate-500 mb-1 font-mono">
+                      <div className="flex justify-between text-[9px] text-slate-600 mb-1 font-mono">
                         <span>+12.5% umbral de alerta</span>
                         <span>Ejecución actual</span>
                       </div>
-                      <div className="h-1.5 w-full bg-slate-900 rounded-full overflow-hidden">
+                      <div className="h-1.5 w-full bg-[#121316] rounded-full overflow-hidden">
                         <div className="h-full bg-gradient-to-r from-red-500 to-rose-400" style={{ width: `${Math.min(100, (monthlyBurn / INITIAL_INCOME) * 100)}%` }} />
                       </div>
                     </div>
                   </div>
 
                   {/* Card 3: Radial Deuda Erradicada */}
-                  <div className="relative glass-panel rounded-2xl p-6 flex items-center justify-between min-h-[160px] group transition-all hover:border-blue-500/20">
+                  <div className="relative glass-panel rounded-2xl p-6 flex items-center justify-between min-h-[160px] group transition-all hover:border-blue-500/20 bg-[#0a0b0d]/50 border-white/[0.04]">
                     <div className="space-y-4">
-                      <span className="text-[10px] text-slate-400 uppercase tracking-widest font-mono block">DEUDA ERRADICADA</span>
+                      <span className="text-[10px] text-slate-500 uppercase tracking-widest font-mono block font-semibold">DEUDA ERRADICADA</span>
                       <div className="grid grid-cols-2 gap-4">
                         <div>
-                          <span className="text-[9px] text-slate-500 font-mono block">PENDIENTE</span>
+                          <span className="text-[9px] text-slate-600 font-mono block">PENDIENTE</span>
                           <span className="text-sm font-bold font-mono text-slate-300">{formatCOP(debtMetrics.totalPending)}</span>
                         </div>
                         <div>
-                          <span className="text-[9px] text-slate-500 font-mono block">PROYECTADO Q4</span>
-                          <span className="text-sm font-bold font-mono text-emerald-400">$0.0</span>
+                          <span className="text-[9px] text-slate-600 font-mono block">PROYECTADO Q4</span>
+                          <span className="text-sm font-bold font-mono text-emerald-400">$0</span>
                         </div>
                       </div>
                     </div>
@@ -809,7 +843,7 @@ export default function TobiramaFinancialOS() {
                     {/* Circular SVG Gauge matching Screen 1 */}
                     <div className="relative h-24 w-24 flex items-center justify-center">
                       <svg className="h-full w-full -rotate-90">
-                        <circle cx="48" cy="48" r="38" stroke="rgba(255,255,255,0.03)" strokeWidth="6" fill="none"/>
+                        <circle cx="48" cy="48" r="38" stroke="rgba(255,255,255,0.01)" strokeWidth="6" fill="none"/>
                         <motion.circle
                           cx="48"
                           cy="48"
@@ -826,7 +860,7 @@ export default function TobiramaFinancialOS() {
                       </svg>
                       <div className="absolute flex flex-col items-center justify-center text-center">
                         <span className="text-base font-bold font-mono text-white">{Math.round(debtMetrics.percentage)}%</span>
-                        <span className="text-[8px] text-slate-400 uppercase tracking-tight">Completado</span>
+                        <span className="text-[8px] text-slate-500 uppercase tracking-tight font-semibold">Completado</span>
                       </div>
                     </div>
                   </div>
@@ -837,77 +871,77 @@ export default function TobiramaFinancialOS() {
                 <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
                   
                   {/* Column 1: System Status Node List (Ledger, API) */}
-                  <div className="lg:col-span-4 glass-panel rounded-2xl p-6 flex flex-col justify-between">
+                  <div className="lg:col-span-4 glass-panel rounded-2xl p-6 flex flex-col justify-between bg-[#0a0b0d]/50 border-white/[0.04]">
                     <div>
-                      <span className="text-[10px] text-slate-400 uppercase tracking-widest font-mono">SISTEMA ALPHA</span>
+                      <span className="text-[10px] text-slate-500 uppercase tracking-widest font-mono font-semibold">SISTEMA TOBIRAMA</span>
                       <h4 className="text-lg font-bold text-white mt-1">Nodos Activos</h4>
                     </div>
 
                     <div className="space-y-4 my-6">
                       {systemNodes.map((node, i) => (
-                        <div key={i} className="flex justify-between items-center py-2 border-b border-white/[0.03] last:border-0">
+                        <div key={i} className="flex justify-between items-center py-2 border-b border-white/[0.02] last:border-0">
                           <span className="text-xs text-slate-400 font-mono">{node.name}</span>
                           <span className={`text-xs font-bold font-mono ${node.statusColor}`}>{node.status}</span>
                         </div>
                       ))}
                     </div>
 
-                    <div className="text-[10px] text-slate-500 font-mono leading-relaxed">
+                    <div className="text-[10px] text-slate-600 font-mono leading-relaxed">
                       Estructura operativa asegurada. Todo bajo control.
                     </div>
                   </div>
 
                   {/* Column 2: Termómetro de Liquidez (Slide block visual) */}
-                  <div className="lg:col-span-4 glass-panel rounded-2xl p-6 flex flex-col justify-between">
+                  <div className="lg:col-span-4 glass-panel rounded-2xl p-6 flex flex-col justify-between bg-[#0a0b0d]/50 border-white/[0.04]">
                     <div>
-                      <span className="text-[10px] text-slate-400 uppercase tracking-widest font-mono">TERMÓMETRO DE LIQUIDEZ</span>
-                      <p className="text-xs text-slate-500 mt-1">Disponibilidad operativa inmediata del bolsillo.</p>
+                      <span className="text-[10px] text-slate-500 uppercase tracking-widest font-mono font-semibold">TERMÓMETRO DE LIQUIDEZ</span>
+                      <p className="text-xs text-slate-600 mt-1">Disponibilidad operativa inmediata del bolsillo.</p>
                     </div>
 
                     <div className="flex items-center gap-6 my-6">
                       {/* Vertical slider slider mockup */}
-                      <div className="w-8 h-36 rounded-full bg-slate-900 border border-white/5 p-1 relative flex flex-col justify-end overflow-hidden">
-                        <div className="absolute inset-0 bg-gradient-to-t from-blue-500/20 via-cyan-500/20 to-emerald-500/20" />
+                      <div className="w-8 h-36 rounded-full bg-black border border-white/[0.04] p-1 relative flex flex-col justify-end overflow-hidden">
+                        <div className="absolute inset-0 bg-gradient-to-t from-blue-500/10 via-cyan-500/10 to-emerald-500/10" />
                         <motion.div 
                           className="w-full bg-gradient-to-t from-blue-500 to-emerald-400 rounded-full"
                           initial={{ height: 0 }}
                           animate={{ height: `${Math.min(100, Math.max(0, (pocketLiquidity / INITIAL_INCOME) * 100))}%` }}
                           transition={{ duration: 1 }}
                         />
-                        <div className="absolute left-1/2 -translate-x-1/2 h-3 w-3 bg-white rounded-full border-2 border-blue-500 shadow-md animate-bounce" style={{ bottom: `${Math.min(90, Math.max(5, (pocketLiquidity / INITIAL_INCOME) * 100))}%` }} />
+                        <div className="absolute left-1/2 -translate-x-1/2 h-3 w-3 bg-white rounded-full border border-blue-500 shadow-md animate-bounce" style={{ bottom: `${Math.min(90, Math.max(5, (pocketLiquidity / INITIAL_INCOME) * 100))}%` }} />
                       </div>
 
                       <div className="space-y-4">
                         <div>
-                          <span className="text-[9px] text-slate-500 uppercase tracking-widest font-mono block">ÓPTIMO</span>
+                          <span className="text-[9px] text-slate-600 uppercase tracking-widest font-mono block">ÓPTIMO</span>
                           <span className="text-lg font-bold font-mono text-emerald-400">
                             {((pocketLiquidity / INITIAL_INCOME) * 100).toFixed(1)}%
                           </span>
                         </div>
                         <div>
-                          <span className="text-[9px] text-slate-500 uppercase tracking-widest font-mono block">RUNWAY (FONDO RESILIENCIA)</span>
+                          <span className="text-[9px] text-slate-600 uppercase tracking-widest font-mono block">RUNWAY (FONDO RESILIENCIA)</span>
                           <span className="text-sm font-bold font-mono text-white">18 Meses</span>
                         </div>
                         <div>
-                          <span className="text-[9px] text-slate-500 uppercase tracking-widest font-mono block">EFECTIVO DISPONIBLE</span>
+                          <span className="text-[9px] text-slate-600 uppercase tracking-widest font-mono block">EFECTIVO DISPONIBLE</span>
                           <span className="text-xs font-bold font-mono text-slate-300">{formatCOP(pocketLiquidity)}</span>
                         </div>
                       </div>
                     </div>
 
-                    <div className="text-[10px] text-slate-500 font-mono">
+                    <div className="text-[10px] text-slate-600 font-mono">
                       Seguimiento en vivo del pool de caja libre.
                     </div>
                   </div>
 
                   {/* Column 3: Command logs panel (Console simulator) */}
-                  <div className="lg:col-span-4 glass-panel rounded-2xl p-6 flex flex-col justify-between min-h-[280px]">
+                  <div className="lg:col-span-4 glass-panel rounded-2xl p-6 flex flex-col justify-between min-h-[280px] bg-[#0a0b0d]/50 border-white/[0.04]">
                     <div>
-                      <span className="text-[10px] text-slate-400 uppercase tracking-widest font-mono">CONSOLA OPERATIVA</span>
+                      <span className="text-[10px] text-slate-500 uppercase tracking-widest font-mono font-semibold">CONSOLA OPERATIVA</span>
                       <h4 className="text-sm font-bold text-white mt-1">Terminal Logs</h4>
                     </div>
 
-                    <div className="flex-1 bg-slate-950/80 border border-white/5 rounded-xl p-3 my-4 overflow-y-auto max-h-[160px] font-mono text-[9px] text-slate-400 space-y-1.5 scrollbar-thin">
+                    <div className="flex-1 bg-black border border-white/[0.04] rounded-xl p-3 my-4 overflow-y-auto max-h-[160px] font-mono text-[9px] text-slate-400 space-y-1.5 scrollbar-thin">
                       {terminalLogs.map((log, index) => (
                         <div key={index} className="leading-normal break-all">
                           {log}
@@ -918,18 +952,18 @@ export default function TobiramaFinancialOS() {
 
                     <form onSubmit={handleTerminalSubmit} className="flex gap-2">
                       <div className="relative flex-1">
-                        <Terminal className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-500" />
+                        <Terminal className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-600" />
                         <input
                           type="text"
                           placeholder="Enviar comando..."
                           value={terminalInput}
                           onChange={(e) => setTerminalInput(e.target.value)}
-                          className="w-full pl-9 pr-4 py-2 rounded-lg border border-white/5 bg-slate-900/40 text-xs font-mono text-slate-200 focus:border-blue-500/40"
+                          className="w-full pl-9 pr-4 py-2 rounded-lg border border-white/[0.04] bg-black text-xs font-mono text-slate-200 focus:border-white/[0.15]"
                         />
                       </div>
                       <button
                         type="submit"
-                        className="px-3 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-xs font-bold uppercase tracking-wider text-white transition-colors cursor-pointer"
+                        className="px-3 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-xs font-bold uppercase tracking-wider text-white transition-colors cursor-pointer"
                       >
                         <Send className="h-3.5 w-3.5" />
                       </button>
@@ -938,57 +972,80 @@ export default function TobiramaFinancialOS() {
 
                 </div>
 
-                {/* Bottom Recent Entities table matching Screen 1 */}
-                <div className="glass-panel rounded-2xl p-6">
+                {/* Bottom Recent Entities table mapping Screen 1 */}
+                <div className="glass-panel rounded-2xl p-6 bg-[#0a0b0d]/50 border-white/[0.04]">
                   <div className="flex justify-between items-center mb-6">
                     <div>
-                      <h4 className="text-base font-bold text-white">Entidades Recientes</h4>
-                      <p className="text-xs text-slate-500">Volumen financiero e indicación de riesgos operativos.</p>
+                      <h4 className="text-base font-bold text-white">Compromisos Presupuestales</h4>
+                      <p className="text-xs text-slate-600">Volumen financiero de abonos y nivel de ejecución real.</p>
                     </div>
-                    <button className="text-xs text-blue-400 hover:underline">Ver todas</button>
+                    <button onClick={() => setActiveView("audit")} className="text-xs text-slate-400 hover:text-white hover:underline transition-colors">Ver todos</button>
                   </div>
 
                   <div className="overflow-x-auto">
                     <table className="w-full text-left border-collapse font-mono text-xs">
                       <thead>
-                        <tr className="border-b border-white/5 bg-slate-950/20 text-slate-500 uppercase tracking-widest text-[9px] font-bold">
-                          <th className="px-6 py-3.5">Entidad</th>
+                        <tr className="border-b border-white/[0.04] bg-slate-950/20 text-slate-500 uppercase tracking-widest text-[9px] font-bold">
+                          <th className="px-6 py-3.5">Compromiso / Categoría</th>
                           <th className="px-6 py-3.5">Estado</th>
-                          <th className="px-6 py-3.5 text-right">Volumen 24h</th>
-                          <th className="px-6 py-3.5 text-center">Nivel de Riesgo</th>
+                          <th className="px-6 py-3.5 text-right">Volumen Pagado</th>
+                          <th className="px-6 py-3.5 text-center">Nivel de Ejecución</th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-white/5">
-                        {recentEntities.map((ent, i) => (
-                          <tr key={i} className="hover:bg-white/[0.01] transition-colors">
-                            <td className="px-6 py-4 flex items-center gap-3 font-semibold text-slate-200">
-                              <Building2 className="h-4 w-4 text-slate-500" />
-                              {ent.name}
-                            </td>
-                            <td className="px-6 py-4">
-                              <span className={`px-2 py-0.5 rounded text-[9px] border font-bold ${ent.statusColor}`}>
-                                {ent.status}
-                              </span>
-                            </td>
-                            <td className="px-6 py-4 text-right font-bold text-slate-300">
-                              {formatCOP(ent.volume)}
-                            </td>
-                            <td className="px-6 py-4 text-center">
-                              <div className="inline-flex gap-1">
-                                {ent.riskSegments.map((risk, index) => (
-                                  <span
-                                    key={index}
-                                    className={`h-1.5 w-6 rounded-full ${
-                                      risk 
-                                        ? ent.status === "EN PAUSA" ? "bg-red-500" : "bg-emerald-500"
-                                        : "bg-slate-800"
-                                    }`}
-                                  />
-                                ))}
-                              </div>
-                            </td>
-                          </tr>
-                        ))}
+                      <tbody className="divide-y divide-white/[0.02]">
+                        {budgetItems.map((item, i) => {
+                          const outstanding = Math.max(0, item.assigned - item.paid);
+                          const isPaid = outstanding === 0;
+                          
+                          // Risk-bar style segments
+                          // 100% paid: 3 green blocks
+                          // 50-99% paid: 2 green/1 gray
+                          // 1-49% paid: 1 green/2 gray
+                          // 0% paid: 3 gray
+                          const ratio = item.assigned > 0 ? item.paid / item.assigned : 1;
+                          let segments = [false, false, false];
+                          if (ratio >= 1.0) segments = [true, true, true];
+                          else if (ratio >= 0.5) segments = [true, true, false];
+                          else if (ratio > 0) segments = [true, false, false];
+
+                          return (
+                            <tr key={i} className="hover:bg-white/[0.01] transition-colors">
+                              <td className="px-6 py-4 flex items-center gap-3 font-semibold text-slate-200">
+                                <Building2 className="h-4 w-4 text-slate-600" />
+                                <div>
+                                  <div>{item.item}</div>
+                                  <div className="text-[9px] text-slate-500 uppercase tracking-tight mt-0.5">{item.category}</div>
+                                </div>
+                              </td>
+                              <td className="px-6 py-4">
+                                <span className={`px-2.5 py-0.5 rounded-full text-[9px] border font-bold ${
+                                  isPaid 
+                                    ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" 
+                                    : "bg-yellow-500/10 text-yellow-400 border-yellow-500/20"
+                                }`}>
+                                  {isPaid ? "COMPLETADO" : "PENDIENTE"}
+                                </span>
+                              </td>
+                              <td className="px-6 py-4 text-right font-bold text-slate-300">
+                                {formatCOP(item.paid)}
+                              </td>
+                              <td className="px-6 py-4 text-center">
+                                <div className="inline-flex gap-1">
+                                  {segments.map((active, index) => (
+                                    <span
+                                      key={index}
+                                      className={`h-1.5 w-6 rounded-full ${
+                                        active 
+                                          ? isPaid ? "bg-emerald-500" : "bg-yellow-500"
+                                          : "bg-zinc-800"
+                                      }`}
+                                    />
+                                  ))}
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>
@@ -997,7 +1054,7 @@ export default function TobiramaFinancialOS() {
                 {/* Floating plus button for quick register shortcut */}
                 <button
                   onClick={() => setActiveView("tracker")}
-                  className="fixed bottom-6 right-6 h-12 w-12 rounded-full bg-blue-600 hover:bg-blue-500 active:scale-[0.98] transition-all flex items-center justify-center text-white shadow-lg shadow-blue-500/25 z-30 cursor-pointer"
+                  className="fixed bottom-6 right-6 h-12 w-12 rounded-full bg-white hover:bg-slate-200 active:scale-[0.98] transition-all flex items-center justify-center text-black shadow-lg z-30 cursor-pointer"
                   title="Nueva Transacción Flash"
                 >
                   <Plus className="h-6 w-6" />
@@ -1017,15 +1074,15 @@ export default function TobiramaFinancialOS() {
               >
                 <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
                   <div>
-                    <span className="text-[10px] text-slate-400 uppercase tracking-widest font-mono">EXECUTIVE OVERVIEW</span>
+                    <span className="text-[10px] text-slate-500 uppercase tracking-widest font-mono font-semibold">EXECUTIVE OVERVIEW</span>
                     <h3 className="text-2xl font-bold tracking-tight text-white mt-1">Velocidad del Capital</h3>
                   </div>
                   <div className="flex gap-3">
-                    <button className="flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-xs font-semibold text-white transition-colors cursor-pointer">
+                    <button className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white text-black hover:bg-slate-200 text-xs font-semibold transition-colors cursor-pointer">
                       <FileText className="h-4 w-4" />
                       Exportar Reporte
                     </button>
-                    <select className="px-4 py-2 rounded-xl border border-white/5 bg-[#090d16] text-xs font-mono text-slate-300">
+                    <select className="px-4 py-2 rounded-xl border border-white/[0.04] bg-[#0a0b0d] text-xs font-mono text-slate-400">
                       <option>Últimos 30 días</option>
                       <option>Últimos 90 días</option>
                     </select>
@@ -1034,52 +1091,66 @@ export default function TobiramaFinancialOS() {
 
                 <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
                   
-                  {/* Asset Trajectory Chart Mock (SVG-based Screen 3 style) */}
-                  <div className="lg:col-span-8 glass-panel rounded-2xl p-6">
+                  {/* Asset Trajectory Chart (SVG-based Wave Chart) */}
+                  <div className="lg:col-span-8 glass-panel rounded-2xl p-6 bg-[#0a0b0d]/50 border-white/[0.04]">
                     <div className="flex justify-between items-start mb-6">
                       <div>
                         <h4 className="text-base font-bold text-white">Trayectoria de Activos</h4>
-                        <p className="text-xs text-slate-500">Liquidación y progresión del flujo de caja mensual.</p>
+                        <p className="text-xs text-slate-600">Progresión en tiempo real de la liquidez libre en el mes.</p>
                       </div>
                       <div className="text-right font-mono">
-                        <span className="text-xl font-bold text-white">{formatCOP(pocketLiquidity + INITIAL_INCOME)}</span>
+                        <span className="text-xl font-bold text-white">{formatCOP(pocketLiquidity)}</span>
                         <span className="text-[9px] text-emerald-400 block">+12.4% vs prev</span>
                       </div>
                     </div>
 
                     {/* Smooth glowing SVG wave path */}
-                    <div className="relative h-60 w-full overflow-hidden bg-slate-950/20 border border-white/[0.03] rounded-xl p-4">
-                      <svg className="w-full h-full" viewBox="0 0 500 200" preserveAspectRatio="none">
-                        <defs>
-                          <linearGradient id="chartGrad" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="0%" stopColor="#3b82f6" stopOpacity="0.25" />
-                            <stop offset="100%" stopColor="#3b82f6" stopOpacity="0.0" />
-                          </linearGradient>
-                        </defs>
-                        {/* Grid lines */}
-                        <line x1="0" y1="50" x2="500" y2="50" stroke="rgba(255,255,255,0.02)" strokeWidth="1" />
-                        <line x1="0" y1="100" x2="500" y2="100" stroke="rgba(255,255,255,0.02)" strokeWidth="1" />
-                        <line x1="0" y1="150" x2="500" y2="150" stroke="rgba(255,255,255,0.02)" strokeWidth="1" />
-                        
-                        {/* Shaded Area */}
-                        <path d="M0,150 C50,140 100,160 150,110 C200,60 250,130 300,100 C350,70 400,120 450,135 C480,140 500,80 500,80 L500,200 L0,200 Z" fill="url(#chartGrad)" />
-                        
-                        {/* Smooth Line */}
-                        <path d="M0,150 C50,140 100,160 150,110 C200,60 250,130 300,100 C350,70 400,120 450,135 C480,140 500,80 500,80" stroke="#3b82f6" strokeWidth="3" fill="none" strokeLinecap="round" />
-                        
-                        {/* Glow points */}
-                        <circle cx="150" cy="110" r="4" fill="#60a5fa" stroke="#070b13" strokeWidth="2" />
-                        <circle cx="300" cy="100" r="4" fill="#60a5fa" stroke="#070b13" strokeWidth="2" />
-                        <circle cx="500" cy="80" r="4" fill="#60a5fa" stroke="#070b13" strokeWidth="2" />
-                      </svg>
+                    <div className="relative h-60 w-full overflow-hidden bg-black border border-white/[0.04] rounded-xl p-4">
+                      {chartPathData.linePath ? (
+                        <svg className="w-full h-full" viewBox="0 0 500 150" preserveAspectRatio="none">
+                          <defs>
+                            <linearGradient id="chartGrad" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="0%" stopColor="#3b82f6" stopOpacity="0.2" />
+                              <stop offset="100%" stopColor="#3b82f6" stopOpacity="0.0" />
+                            </linearGradient>
+                          </defs>
+                          {/* Grid lines */}
+                          <line x1="0" y1="35" x2="500" y2="35" stroke="rgba(255,255,255,0.01)" strokeWidth="1" />
+                          <line x1="0" y1="75" x2="500" y2="75" stroke="rgba(255,255,255,0.01)" strokeWidth="1" />
+                          <line x1="0" y1="115" x2="500" y2="115" stroke="rgba(255,255,255,0.01)" strokeWidth="1" />
+                          
+                          {/* Shaded Area */}
+                          <path d={chartPathData.areaPath} fill="url(#chartGrad)" />
+                          
+                          {/* Smooth Line */}
+                          <path d={chartPathData.linePath} stroke="#3b82f6" strokeWidth="2.5" fill="none" strokeLinecap="round" />
+                          
+                          {/* Glow points */}
+                          {chartPathData.points.map((pt, i) => (
+                            <circle key={i} cx={pt.x} cy={pt.y} r="3.5" fill="#60a5fa" stroke="#000" strokeWidth="1.5" />
+                          ))}
+                        </svg>
+                      ) : (
+                        <div className="h-full w-full flex items-center justify-center font-mono text-xs text-slate-600">
+                          Sin datos de trayectoria suficientes
+                        </div>
+                      )}
                       
-                      {/* X Axis labels */}
-                      <div className="flex justify-between items-center text-[8px] font-mono text-slate-500 mt-2">
-                        <span>JUNIO 01</span>
-                        <span>JUNIO 08</span>
-                        <span>JUNIO 15</span>
-                        <span>JUNIO 22</span>
-                        <span>JUNIO 29</span>
+                      {/* X Axis labels based on actual transactions */}
+                      <div className="flex justify-between items-center text-[8px] font-mono text-slate-600 mt-2">
+                        {trajectoryPoints.length > 0 ? (
+                          <>
+                            <span>{trajectoryPoints[0].date}</span>
+                            <span>{trajectoryPoints[Math.floor(trajectoryPoints.length / 2)]?.date || ""}</span>
+                            <span>{trajectoryPoints[trajectoryPoints.length - 1].date}</span>
+                          </>
+                        ) : (
+                          <>
+                            <span>JUN 01</span>
+                            <span>JUN 15</span>
+                            <span>JUN 30</span>
+                          </>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -1088,9 +1159,9 @@ export default function TobiramaFinancialOS() {
                   <div className="lg:col-span-4 space-y-6">
                     
                     {/* Operating Income Card */}
-                    <div className="glass-panel rounded-2xl p-6 flex justify-between items-center">
+                    <div className="glass-panel rounded-2xl p-6 flex justify-between items-center bg-[#0a0b0d]/50 border-white/[0.04]">
                       <div>
-                        <span className="text-[9px] text-slate-500 uppercase tracking-widest font-mono block">INGRESOS DE OPERACIÓN</span>
+                        <span className="text-[9px] text-slate-500 uppercase tracking-widest font-mono block font-semibold">INGRESOS DE OPERACIÓN</span>
                         <span className="text-xl font-bold font-mono text-white mt-1 block">{formatCOP(INITIAL_INCOME)}</span>
                       </div>
                       <span className="px-2 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/20 text-[9px] font-bold font-mono text-emerald-400">
@@ -1099,9 +1170,9 @@ export default function TobiramaFinancialOS() {
                     </div>
 
                     {/* Total Expenses Card */}
-                    <div className="glass-panel rounded-2xl p-6 flex justify-between items-center">
+                    <div className="glass-panel rounded-2xl p-6 flex justify-between items-center bg-[#0a0b0d]/50 border-white/[0.04]">
                       <div>
-                        <span className="text-[9px] text-slate-500 uppercase tracking-widest font-mono block">GASTOS TOTALES</span>
+                        <span className="text-[9px] text-slate-500 uppercase tracking-widest font-mono block font-semibold">GASTOS TOTALES</span>
                         <span className="text-xl font-bold font-mono text-white mt-1 block">{formatCOP(monthlyBurn)}</span>
                       </div>
                       <span className="px-2 py-0.5 rounded bg-red-500/10 border border-red-500/20 text-[9px] font-bold font-mono text-red-400">
@@ -1109,19 +1180,31 @@ export default function TobiramaFinancialOS() {
                       </span>
                     </div>
 
-                    {/* Capital Efficiency circular gauge */}
-                    <div className="glass-panel rounded-2xl p-6">
-                      <span className="text-[9px] text-slate-500 uppercase tracking-widest font-mono block mb-4">EFICIENCIA DE CAPITAL</span>
+                    {/* Capital Efficiency circular gauge (Total Paid vs Total Assigned) */}
+                    <div className="glass-panel rounded-2xl p-6 bg-[#0a0b0d]/50 border-white/[0.04]">
+                      <span className="text-[9px] text-slate-500 uppercase tracking-widest font-mono block mb-4 font-semibold">EFICIENCIA DE CAPITAL</span>
                       <div className="flex items-center gap-4">
                         <div className="relative h-14 w-14 flex items-center justify-center flex-shrink-0">
                           <svg className="h-full w-full -rotate-90">
-                            <circle cx="28" cy="28" r="22" stroke="rgba(255,255,255,0.03)" strokeWidth="4" fill="none"/>
-                            <circle cx="28" cy="28" r="22" stroke="#3b82f6" strokeWidth="4" fill="none" strokeDasharray="138" strokeDashoffset="35" strokeLinecap="round" />
+                            <circle cx="28" cy="28" r="22" stroke="rgba(255,255,255,0.01)" strokeWidth="4" fill="none"/>
+                            <circle 
+                              cx="28" 
+                              cy="28" 
+                              r="22" 
+                              stroke="#3b82f6" 
+                              strokeWidth="4" 
+                              fill="none" 
+                              strokeDasharray="138" 
+                              strokeDashoffset={138 - (138 * (monthlyBurn / (INITIAL_INCOME || 1)))} 
+                              strokeLinecap="round" 
+                            />
                           </svg>
-                          <span className="absolute text-xs font-bold font-mono text-white">74%</span>
+                          <span className="absolute text-2xs font-bold font-mono text-white">
+                            {Math.round((monthlyBurn / INITIAL_INCOME) * 100)}%
+                          </span>
                         </div>
                         <p className="text-[10px] text-slate-400 leading-normal font-mono">
-                          El rendimiento de los activos liquidados es óptimo. Los activos superan los pasivos en 4.2x.
+                          El rendimiento de los pasivos es óptimo. Los egresos ejecutados representan el {Math.round((monthlyBurn / INITIAL_INCOME) * 100)}% del ingreso total de nómina.
                         </p>
                       </div>
                     </div>
@@ -1131,20 +1214,20 @@ export default function TobiramaFinancialOS() {
                 </div>
 
                 {/* Expense distribution metrics */}
-                <div className="glass-panel rounded-2xl p-6">
+                <div className="glass-panel rounded-2xl p-6 bg-[#0a0b0d]/50 border-white/[0.04]">
                   <div className="flex justify-between items-center mb-6">
                     <h4 className="text-base font-bold text-white">Distribución de Egresos</h4>
-                    <span className="text-xs text-blue-400 cursor-pointer hover:underline">Auditoría Profunda</span>
+                    <span className="text-xs text-slate-400 hover:text-white cursor-pointer hover:underline">Auditoría Profunda</span>
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                     {distributionMatrix.map((item, i) => (
-                      <div key={i} className="space-y-2">
+                      <div key={i} className="space-y-2 p-4 rounded-xl bg-black border border-white/[0.02]">
                         <div className="flex justify-between items-center text-[10px] font-mono">
-                          <span className="text-slate-400 uppercase tracking-tight">{item.item}</span>
+                          <span className="text-slate-400 uppercase tracking-tight font-semibold">{item.item}</span>
                           <span className="text-slate-300 font-bold">{Math.round(item.percentage)}%</span>
                         </div>
-                        <div className="h-1.5 w-full bg-slate-900 rounded-full overflow-hidden">
+                        <div className="h-1.5 w-full bg-zinc-900 rounded-full overflow-hidden">
                           <motion.div
                             className="h-full bg-gradient-to-r from-blue-500 to-indigo-500"
                             initial={{ width: 0 }}
@@ -1161,50 +1244,46 @@ export default function TobiramaFinancialOS() {
                 </div>
 
                 {/* Anomalies Detected table matching Screen 3 */}
-                <div className="glass-panel rounded-2xl p-6">
+                <div className="glass-panel rounded-2xl p-6 bg-[#0a0b0d]/50 border-white/[0.04]">
                   <div className="flex justify-between items-center mb-6">
                     <div>
-                      <h4 className="text-base font-bold text-white">Operaciones Especiales</h4>
-                      <p className="text-xs text-slate-500">Escaneo de movimientos financieros corporativos.</p>
+                      <h4 className="text-base font-bold text-white">Operaciones Registradas</h4>
+                      <p className="text-xs text-slate-600">Escaneo de movimientos financieros reales y conciliación.</p>
                     </div>
-                    <span className="px-2.5 py-0.5 rounded bg-red-500/10 border border-red-500/25 text-[9px] font-bold font-mono text-red-400 uppercase tracking-widest">
-                      Acción Requerida
+                    <span className="px-2.5 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/20 text-[9px] font-bold font-mono text-emerald-400 uppercase tracking-widest">
+                      Ledger Seguro
                     </span>
                   </div>
 
                   <div className="overflow-x-auto">
                     <table className="w-full text-left border-collapse font-mono text-xs">
                       <thead>
-                        <tr className="border-b border-white/5 bg-slate-950/20 text-slate-500 uppercase tracking-widest text-[9px] font-bold">
+                        <tr className="border-b border-white/[0.04] bg-slate-950/20 text-slate-500 uppercase tracking-widest text-[9px] font-bold">
                           <th className="px-6 py-3.5">ID Transacción</th>
-                          <th className="px-6 py-3.5">Entidad / Detalle</th>
+                          <th className="px-6 py-3.5">Detalle / Comercio</th>
                           <th className="px-6 py-3.5 text-right">Valor</th>
-                          <th className="px-6 py-3.5 text-center">Estado de Auditoría</th>
+                          <th className="px-6 py-3.5 text-center">Estado</th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-white/5">
-                        <tr className="hover:bg-white/[0.01]">
-                          <td className="px-6 py-4 font-semibold text-slate-200">#TRX-9821-XP</td>
-                          <td className="px-6 py-4 text-slate-400">Neural Systems Corp - Consultoría</td>
-                          <td className="px-6 py-4 text-right font-bold text-red-400">-$42.000 COP</td>
-                          <td className="px-6 py-4 text-center">
-                            <span className="inline-flex items-center gap-1.5 text-amber-400">
-                              <span className="h-1.5 w-1.5 rounded-full bg-amber-400 animate-pulse" />
-                              Auditoría Pendiente
-                            </span>
-                          </td>
-                        </tr>
-                        <tr className="hover:bg-white/[0.01]">
-                          <td className="px-6 py-4 font-semibold text-slate-200">#TRX-7742-ZA</td>
-                          <td className="px-6 py-4 text-slate-400">Quantum Cloud Services - Nodo 3</td>
-                          <td className="px-6 py-4 text-right font-bold text-emerald-400">+$125.400 COP</td>
-                          <td className="px-6 py-4 text-center">
-                            <span className="inline-flex items-center gap-1.5 text-emerald-400 font-semibold">
-                              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-                              Reconciliado
-                            </span>
-                          </td>
-                        </tr>
+                      <tbody className="divide-y divide-white/[0.02]">
+                        {transactions.slice(0, 5).map((tx, idx) => {
+                          const isInc = tx.type === "Ingreso";
+                          return (
+                            <tr key={tx.id} className="hover:bg-white/[0.01]">
+                              <td className="px-6 py-4 font-semibold text-slate-400">#TRX-{idx + 1}</td>
+                              <td className="px-6 py-4 text-slate-200">{tx.description}</td>
+                              <td className={`px-6 py-4 text-right font-bold ${isInc ? "text-emerald-400" : "text-red-400"}`}>
+                                {isInc ? "+" : "-"}{formatCOP(tx.amount)}
+                              </td>
+                              <td className="px-6 py-4 text-center">
+                                <span className={`inline-flex items-center gap-1.5 ${isInc ? "text-emerald-400" : "text-slate-400"}`}>
+                                  <span className={`h-1.5 w-1.5 rounded-full ${isInc ? "bg-emerald-400" : "bg-slate-400"}`} />
+                                  Reconciliado
+                                </span>
+                              </td>
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>
@@ -1227,16 +1306,16 @@ export default function TobiramaFinancialOS() {
                   
                   {/* Left Column: Visual Capture Form matching Screen 2 */}
                   <div className="lg:col-span-6 flex flex-col justify-center">
-                    <div className="glass-panel-heavy rounded-3xl p-8 max-w-lg w-full mx-auto space-y-6 relative border border-white/[0.08] shadow-[0_0_50px_rgba(0,0,0,0.3)]">
+                    <div className="glass-panel-heavy rounded-3xl p-8 max-w-lg w-full mx-auto space-y-6 relative border border-white/[0.06] shadow-[0_0_50px_rgba(0,0,0,0.5)] bg-black">
                       <div className="text-center space-y-1">
-                        <span className="text-[10px] text-blue-400 font-mono uppercase tracking-widest block">NUEVO REGISTRO</span>
+                        <span className="text-[10px] text-slate-500 font-mono uppercase tracking-widest block font-semibold">NUEVO REGISTRO</span>
                         <h3 className="text-xl font-bold text-slate-200">
                           {quickType === "Ingreso" ? "Ingreso de Operación" : quickType === "Movimiento a Reserva" ? "Movimiento a Reserva" : "Gasto Extra de Caja"}
                         </h3>
                       </div>
 
                       {/* Display amount (Screen 2: big numbers) */}
-                      <div className="h-28 rounded-2xl bg-black/50 border border-white/[0.03] flex items-center justify-center relative group">
+                      <div className="h-28 rounded-2xl bg-[#090a0c] border border-white/[0.02] flex items-center justify-center relative group">
                         <span className="absolute left-6 text-slate-600 font-mono text-2xl font-bold">$</span>
                         <div className="text-4xl font-bold font-mono text-slate-100 tracking-tight select-all">
                           {formatCOP(parseInt(quickAmount) || 0).replace("$", "").trim()}
@@ -1247,16 +1326,16 @@ export default function TobiramaFinancialOS() {
                       <div>
                         <input
                           type="text"
-                          placeholder="Descripción o Comercio (Ej. Almuerzo)"
+                          placeholder="Descripción o Comercio (Ej. Mercado)"
                           value={quickDescription}
                           onChange={(e) => setQuickDescription(e.target.value)}
-                          className="w-full px-4 py-3 rounded-xl border border-white/10 bg-slate-900/60 text-sm text-slate-200 focus:border-blue-500/50"
+                          className="w-full px-4 py-3 rounded-xl border border-white/[0.06] bg-black text-sm text-slate-200 focus:border-white/[0.15]"
                         />
                       </div>
 
                       {/* Category Selector Grid with clean icons (Screen 2 grid) */}
                       <div className="space-y-2.5">
-                        <span className="text-[9px] text-slate-500 uppercase tracking-widest font-mono block">Categoría del Gasto</span>
+                        <span className="text-[9px] text-slate-500 uppercase tracking-widest font-mono block font-semibold">Categoría del Gasto</span>
                         <div className="grid grid-cols-3 gap-3">
                           {CATEGORIES.map((cat) => {
                             const isSel = quickCategory === cat;
@@ -1267,8 +1346,8 @@ export default function TobiramaFinancialOS() {
                                 onClick={() => setQuickCategory(cat)}
                                 className={`p-3.5 rounded-xl border flex flex-col items-center justify-center gap-1.5 text-center transition-all cursor-pointer ${
                                   isSel 
-                                    ? "bg-blue-600/25 border-blue-500/40 text-white shadow-lg shadow-blue-500/10" 
-                                    : "bg-slate-900/40 border-white/5 text-slate-400 hover:text-slate-200 hover:bg-slate-900/80"
+                                    ? "bg-white/[0.04] border-white/[0.12] text-white shadow-lg" 
+                                    : "bg-black border-white/[0.02] text-slate-500 hover:text-slate-300 hover:bg-[#090a0c]"
                                 }`}
                               >
                                 <Building2 className="h-4.5 w-4.5" />
@@ -1281,8 +1360,8 @@ export default function TobiramaFinancialOS() {
 
                       {/* Payment method segmented control */}
                       <div className="space-y-2.5">
-                        <span className="text-[9px] text-slate-500 uppercase tracking-widest font-mono block">Método de Pago</span>
-                        <div className="grid grid-cols-3 gap-2 p-1 bg-slate-950/60 rounded-xl border border-white/5">
+                        <span className="text-[9px] text-slate-500 uppercase tracking-widest font-mono block font-semibold">Método de Pago</span>
+                        <div className="grid grid-cols-3 gap-2 p-1 bg-[#090a0c] rounded-xl border border-white/[0.02]">
                           {(["Débito", "TC", "Efectivo"] as PaymentMethod[]).map((method) => {
                             const isSel = quickMethod === method;
                             return (
@@ -1291,10 +1370,10 @@ export default function TobiramaFinancialOS() {
                                 type="button"
                                 onClick={() => setQuickMethod(method)}
                                 className={`py-2 rounded-lg text-2xs font-bold uppercase tracking-wider font-mono transition-all cursor-pointer ${
-                                  isSel ? "bg-[#0b1220] border border-white/10 text-white shadow" : "text-slate-500 hover:text-slate-300"
+                                  isSel ? "bg-black border border-white/[0.06] text-white shadow" : "text-slate-600 hover:text-slate-300"
                                 }`}
                               >
-                                {method}
+                                {method === "TC" ? "CRÉDITO" : method.toUpperCase()}
                               </button>
                             );
                           })}
@@ -1312,8 +1391,8 @@ export default function TobiramaFinancialOS() {
                               onClick={() => setQuickType(tType)}
                               className={`py-2 rounded-lg text-3xs font-bold uppercase tracking-wider font-mono transition-all border cursor-pointer ${
                                 isSel 
-                                  ? "bg-indigo-600/20 border-indigo-500/30 text-indigo-400" 
-                                  : "bg-slate-900/40 border-white/5 text-slate-500 hover:text-slate-300"
+                                  ? "bg-white/[0.03] border-white/[0.1] text-white" 
+                                  : "bg-black border-white/[0.02] text-slate-600 hover:text-slate-350"
                               }`}
                             >
                               {tType}
@@ -1323,13 +1402,13 @@ export default function TobiramaFinancialOS() {
                       </div>
 
                       {/* Virtual Digit keyboard for COP numeric entries */}
-                      <div className="grid grid-cols-4 gap-2 pt-2 border-t border-white/5">
+                      <div className="grid grid-cols-4 gap-2 pt-2 border-t border-white/[0.04]">
                         {["1", "2", "3", "000"].map((key) => (
                           <button
                             key={key}
                             type="button"
                             onClick={() => handleDigitPress(key)}
-                            className="py-3 rounded-xl bg-slate-900/40 hover:bg-slate-900 border border-white/5 font-mono text-sm text-slate-300 transition-colors cursor-pointer"
+                            className="py-3 rounded-xl bg-[#090a0c]/80 hover:bg-[#090a0c] border border-white/[0.02] font-mono text-sm text-slate-300 transition-colors cursor-pointer"
                           >
                             {key}
                           </button>
@@ -1339,7 +1418,7 @@ export default function TobiramaFinancialOS() {
                             key={key}
                             type="button"
                             onClick={() => handleDigitPress(key)}
-                            className="py-3 rounded-xl bg-slate-900/40 hover:bg-slate-900 border border-white/5 font-mono text-sm text-slate-300 transition-colors cursor-pointer"
+                            className="py-3 rounded-xl bg-[#090a0c]/80 hover:bg-[#090a0c] border border-white/[0.02] font-mono text-sm text-slate-300 transition-colors cursor-pointer"
                           >
                             {key}
                           </button>
@@ -1351,8 +1430,8 @@ export default function TobiramaFinancialOS() {
                               key={key}
                               type="button"
                               onClick={isBack ? handleBackspace : () => handleDigitPress(key)}
-                              className={`py-3 rounded-xl border border-white/5 font-mono text-sm text-slate-300 transition-colors cursor-pointer ${
-                                isBack ? "bg-red-500/10 hover:bg-red-500/20 text-red-400" : "bg-slate-900/40 hover:bg-slate-900"
+                              className={`py-3 rounded-xl border border-white/[0.02] font-mono text-sm text-slate-300 transition-colors cursor-pointer ${
+                                isBack ? "bg-red-500/10 hover:bg-red-500/20 text-red-400" : "bg-[#090a0c]/80 hover:bg-[#090a0c]"
                               }`}
                             >
                               {isBack ? "←" : key}
@@ -1362,7 +1441,7 @@ export default function TobiramaFinancialOS() {
                         <button
                           type="button"
                           onClick={() => setQuickAmount("0")}
-                          className="col-span-4 py-2 text-[10px] font-mono text-slate-500 hover:text-slate-300 transition-colors uppercase tracking-widest cursor-pointer"
+                          className="col-span-4 py-2 text-[10px] font-mono text-slate-600 hover:text-slate-300 transition-colors uppercase tracking-widest cursor-pointer"
                         >
                           Limpiar Teclado
                         </button>
@@ -1372,11 +1451,11 @@ export default function TobiramaFinancialOS() {
                       <button
                         onClick={handleQuickRegister}
                         disabled={parseInt(quickAmount) === 0}
-                        className={`w-full py-4 rounded-2xl bg-gradient-to-r from-emerald-500 to-green-400 hover:from-emerald-400 hover:to-green-300 text-slate-950 font-bold tracking-widest uppercase text-xs shadow-lg shadow-emerald-500/15 transition-all active:scale-[0.99] flex items-center justify-center gap-1.5 cursor-pointer ${
-                          parseInt(quickAmount) === 0 ? "opacity-45 pointer-events-none" : ""
+                        className={`w-full py-4 rounded-2xl bg-gradient-to-r from-emerald-500 to-green-400 hover:from-emerald-400 hover:to-green-300 text-black font-bold tracking-widest uppercase text-xs shadow-lg shadow-emerald-500/5 transition-all active:scale-[0.99] flex items-center justify-center gap-1.5 cursor-pointer ${
+                          parseInt(quickAmount) === 0 ? "opacity-35 pointer-events-none" : ""
                         }`}
                       >
-                        Confirmar ⚡
+                        Confirmar Transacción ⚡
                       </button>
 
                       {quickSuccessMsg && (
@@ -1391,20 +1470,20 @@ export default function TobiramaFinancialOS() {
                           setQuickAmount("0");
                           setQuickDescription("");
                         }}
-                        className="text-center font-mono text-3xs text-slate-500 hover:text-slate-400 block w-full uppercase tracking-wider cursor-pointer"
+                        className="text-center font-mono text-3xs text-slate-600 hover:text-slate-400 block w-full uppercase tracking-wider cursor-pointer"
                       >
-                        Cancelar Transacción
+                        Cancelar Registro
                       </button>
                     </div>
                   </div>
 
                   {/* Right Column: Dynamic Timeline audit feed */}
                   <div className="lg:col-span-6 space-y-6">
-                    <div className="glass-panel rounded-3xl p-6 flex flex-col min-h-[480px]">
+                    <div className="glass-panel rounded-3xl p-6 flex flex-col min-h-[480px] bg-[#0a0b0d]/50 border-white/[0.04]">
                       <div className="flex justify-between items-center mb-6">
                         <div className="flex items-center gap-2">
-                          <Activity className="h-5 w-5 text-blue-400" />
-                          <h4 className="text-base font-bold text-white">Auditoría de Movimientos</h4>
+                          <Activity className="h-5 w-5 text-slate-400" />
+                          <h4 className="text-base font-bold text-white">Libro de Movimientos</h4>
                         </div>
                         <span className="text-xs font-mono text-slate-500">
                           {transactions.length} registros
@@ -1424,7 +1503,7 @@ export default function TobiramaFinancialOS() {
                                 animate={{ opacity: 1, scale: 1 }}
                                 exit={{ opacity: 0, scale: 0.95 }}
                                 transition={{ type: "spring", stiffness: 350, damping: 25 }}
-                                className="flex items-center justify-between p-4 rounded-xl border border-white/5 bg-[#080d16]/50 hover:bg-[#080d16]/80 transition-colors"
+                                className="flex items-center justify-between p-4 rounded-xl border border-white/[0.02] bg-[#050608]/50 hover:bg-[#050608]/80 transition-colors"
                               >
                                 <div className="flex items-center gap-3">
                                   <div className={`h-9 w-9 rounded-lg flex items-center justify-center border ${
@@ -1451,8 +1530,8 @@ export default function TobiramaFinancialOS() {
                                       <span className="text-[10px] font-mono text-slate-500">
                                         {tx.date}
                                       </span>
-                                      <span className="text-[9px] font-mono bg-slate-900 border border-white/5 text-slate-400 px-1.5 py-0.25 rounded">
-                                        {tx.paymentMethod}
+                                      <span className="text-[9px] font-mono bg-black border border-white/[0.04] text-slate-500 px-1.5 py-0.25 rounded">
+                                        {tx.paymentMethod === "TC" ? "CRÉDITO" : tx.paymentMethod.toUpperCase()}
                                       </span>
                                       <span className="text-[10px] font-semibold text-slate-500 font-mono">
                                         {tx.category}
@@ -1502,21 +1581,21 @@ export default function TobiramaFinancialOS() {
                   <p className="text-sm text-slate-400">Data Grid de alta densidad informativa y auditoría presupuestaria.</p>
                 </div>
 
-                <div className="glass-panel rounded-2xl overflow-hidden">
+                <div className="glass-panel rounded-2xl overflow-hidden bg-[#0a0b0d]/50 border-white/[0.04]">
                   <div className="overflow-x-auto">
                     <table className="w-full text-left border-collapse">
                       <thead>
-                        <tr className="border-b border-white/5 bg-slate-900/30 text-xs font-semibold text-slate-400 uppercase font-mono tracking-wider">
+                        <tr className="border-b border-white/[0.04] bg-slate-900/10 text-xs font-semibold text-slate-400 uppercase font-mono tracking-wider">
                           <th className="px-6 py-4.5">Categoría</th>
                           <th className="px-6 py-4.5">Ítem / Compromiso</th>
-                          <th className="px-6 py-4.5 text-right">Presupuesto Inicial</th>
+                          <th className="px-6 py-4.5 text-right">Presupuesto Asignado</th>
                           <th className="px-6 py-4.5 text-right">Ya Pagué (Real)</th>
                           <th className="px-6 py-4.5 text-right">Falta por Pagar</th>
                           <th className="px-6 py-4.5 text-center">Estado</th>
                           <th className="px-6 py-4.5 text-center">Acción</th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-white/5 text-sm">
+                      <tbody className="divide-y divide-white/[0.02] text-sm">
                         {budgetItems.map((item) => {
                           const outstanding = Math.max(0, item.assigned - item.paid);
                           const isPaid = outstanding === 0;
@@ -1555,7 +1634,7 @@ export default function TobiramaFinancialOS() {
                               <td className="px-6 py-4.5 text-center">
                                 <button
                                   onClick={() => handleEditBudget(item)}
-                                  className="px-3 py-1 rounded bg-blue-600/10 border border-blue-500/20 hover:bg-blue-600/20 text-xs font-semibold text-blue-400 transition-all cursor-pointer"
+                                  className="px-3 py-1 rounded bg-zinc-900 border border-white/[0.04] hover:bg-zinc-800 text-xs font-semibold text-slate-300 transition-all cursor-pointer"
                                 >
                                   Editar
                                 </button>
@@ -1584,7 +1663,7 @@ export default function TobiramaFinancialOS() {
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={() => setEditingItem(null)}
-              className="absolute inset-0 bg-black/70 backdrop-blur-sm"
+              className="absolute inset-0 bg-black/80 backdrop-blur-sm"
             />
 
             {/* Modal Box */}
@@ -1593,12 +1672,12 @@ export default function TobiramaFinancialOS() {
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
               transition={{ duration: 0.2 }}
-              className="relative w-full max-w-md bg-[#0b1120] border border-white/10 rounded-2xl p-6 shadow-2xl z-10 space-y-6"
+              className="relative w-full max-w-md bg-black border border-white/[0.06] rounded-2xl p-6 shadow-2xl z-10 space-y-6"
             >
               <div className="flex justify-between items-center">
                 <div>
                   <h4 className="text-base font-bold text-white">Editar Registro</h4>
-                  <p className="text-xs text-slate-400">{editingItem.item} ({editingItem.category})</p>
+                  <p className="text-xs text-slate-500">{editingItem.item} ({editingItem.category})</p>
                 </div>
                 <button
                   onClick={() => setEditingItem(null)}
@@ -1610,27 +1689,27 @@ export default function TobiramaFinancialOS() {
 
               <div className="space-y-4">
                 <div>
-                  <label className="block text-xs font-mono uppercase text-slate-400 mb-1">Presupuesto Inicial (Asignado)</label>
+                  <label className="block text-xs font-mono uppercase text-slate-550 mb-1">Presupuesto Asignado</label>
                   <div className="relative">
                     <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 font-mono">$</span>
                     <input
                       type="number"
                       value={editAssignedValue}
                       onChange={(e) => setEditAssignedValue(e.target.value)}
-                      className="w-full pl-8 pr-4 py-2.5 rounded-xl border border-white/10 bg-slate-900/60 text-sm font-mono text-slate-200 focus:border-blue-500/50"
+                      className="w-full pl-8 pr-4 py-2.5 rounded-xl border border-white/[0.06] bg-black text-sm font-mono text-slate-200 focus:border-white/[0.15]"
                     />
                   </div>
                 </div>
 
                 <div>
-                  <label className="block text-xs font-mono uppercase text-slate-400 mb-1">Ya Pagué (Real)</label>
+                  <label className="block text-xs font-mono uppercase text-slate-550 mb-1">Ya Pagué (Real)</label>
                   <div className="relative">
                     <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 font-mono">$</span>
                     <input
                       type="number"
                       value={editPaidValue}
                       onChange={(e) => setEditPaidValue(e.target.value)}
-                      className="w-full pl-8 pr-4 py-2.5 rounded-xl border border-white/10 bg-slate-900/60 text-sm font-mono text-slate-200 focus:border-blue-500/50"
+                      className="w-full pl-8 pr-4 py-2.5 rounded-xl border border-white/[0.06] bg-black text-sm font-mono text-slate-200 focus:border-white/[0.15]"
                     />
                   </div>
                 </div>
@@ -1639,13 +1718,13 @@ export default function TobiramaFinancialOS() {
               <div className="flex gap-4">
                 <button
                   onClick={() => setEditingItem(null)}
-                  className="flex-1 py-3 rounded-xl border border-white/10 hover:bg-white/5 transition-all text-xs font-bold uppercase text-slate-400 cursor-pointer"
+                  className="flex-1 py-3 rounded-xl border border-white/[0.06] hover:bg-white/5 transition-all text-xs font-bold uppercase text-slate-400 cursor-pointer"
                 >
                   Cancelar
                 </button>
                 <button
                   onClick={saveBudgetEdit}
-                  className="flex-1 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-xs font-bold uppercase text-white cursor-pointer"
+                  className="flex-1 py-3 rounded-xl bg-white text-black hover:bg-slate-200 text-xs font-bold uppercase cursor-pointer"
                 >
                   Guardar Cambios
                 </button>
