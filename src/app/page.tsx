@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo, useCallback } from "react";
+import React, { useState, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Wallet,
@@ -8,10 +8,6 @@ import {
   TrendingUp,
   ArrowUpRight,
   ArrowDownLeft,
-  CheckCircle2,
-  AlertCircle,
-  Calendar,
-  DollarSign,
   PlusCircle,
   X,
   Menu,
@@ -19,10 +15,8 @@ import {
   Activity,
   Layers,
   FileText,
-  Plus,
   Coins,
   ShieldCheck,
-  TrendingDown,
   RotateCcw
 } from "lucide-react";
 
@@ -459,7 +453,7 @@ export default function TobiramaFinancialOS() {
             return (
               <button
                 key={item.id}
-                onClick={() => setActiveView(item.id as any)}
+                onClick={() => setActiveView(item.id as "dashboard" | "budget" | "tracker")}
                 className={`relative flex items-center gap-3 w-full px-4 py-3.5 rounded-xl text-sm font-medium transition-all duration-300 ${
                   isActive ? "text-white" : "text-slate-400 hover:text-slate-200 hover:bg-white/5"
                 }`}
@@ -542,7 +536,7 @@ export default function TobiramaFinancialOS() {
                     <button
                       key={item.id}
                       onClick={() => {
-                        setActiveView(item.id as any);
+                        setActiveView(item.id as "dashboard" | "budget" | "tracker");
                         setIsSidebarOpen(false);
                       }}
                       className={`relative flex items-center gap-3 w-full px-4 py-3 rounded-lg text-sm font-medium transition-all ${
@@ -859,7 +853,7 @@ export default function TobiramaFinancialOS() {
               >
                 <div>
                   <h3 className="text-2xl font-bold tracking-tight text-white">Libro Diario Financiero</h3>
-                  <p className="text-sm text-slate-400">Captura ágil de movimientos "flash" y auditoría de transacciones.</p>
+                  <p className="text-sm text-slate-400">Captura ágil de movimientos &quot;flash&quot; y auditoría de transacciones.</p>
                 </div>
 
                 {/* --- Vista C: TWO COLUMN TRACKER --- */}
