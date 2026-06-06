@@ -57,13 +57,21 @@ const initialTransactions: Transaction[] = [
 let pool: Pool | null = null;
 
 const getPool = () => {
-  if (!pool && process.env.DATABASE_URL) {
-    pool = new Pool({
-      connectionString: process.env.DATABASE_URL,
-      ssl: {
-        rejectUnauthorized: false
-      }
-    });
+  if (!pool) {
+    const connectionString = 
+      process.env.DATABASE_URL || 
+      process.env.POSTGRES_URL || 
+      process.env.SUPABASE_DATABASE_URL ||
+      process.env.POSTGRES_URL_NON_POOLING;
+
+    if (connectionString) {
+      pool = new Pool({
+        connectionString,
+        ssl: {
+          rejectUnauthorized: false
+        }
+      });
+    }
   }
   return pool;
 };
