@@ -1312,19 +1312,30 @@ export default function TobiramaFinancialOS() {
             </div>
 
             <div>
-              <h2 className="text-xl font-bold tracking-wider uppercase text-slate-200">Tobirama OS</h2>
+              <h2 className="text-xl font-bold tracking-wider uppercase text-slate-200">TOBIRAMA OS</h2>
               <p className="text-xs text-slate-500 font-mono tracking-wider mt-1">SISTEMA CONTROL DE ACTIVOS</p>
             </div>
 
             <form onSubmit={handleLoginSubmit} className="w-full space-y-4 pt-4">
               <div className="relative">
                 <input
+                  type="text"
+                  placeholder="Ingrese Usuario"
+                  value={usernameInput}
+                  onChange={(e) => setUsernameInput(e.target.value)}
+                  className="w-full px-5 py-4 rounded-2xl bg-black border border-white/[0.06] text-center font-mono text-slate-200 focus:border-blue-500/40 text-base placeholder-slate-650"
+                  autoFocus
+                  required
+                />
+              </div>
+
+              <div className="relative">
+                <input
                   type="password"
                   placeholder="Ingrese Clave de Acceso"
                   value={passwordInput}
                   onChange={(e) => setPasswordInput(e.target.value)}
-                  className="w-full px-5 py-4 rounded-2xl bg-black border border-white/[0.06] text-center font-mono tracking-widest text-slate-200 focus:border-blue-500/40 text-base"
-                  autoFocus
+                  className="w-full px-5 py-4 rounded-2xl bg-black border border-white/[0.06] text-center font-mono tracking-widest text-slate-200 focus:border-blue-500/40 text-base placeholder-slate-650"
                   required
                 />
               </div>
@@ -1335,7 +1346,7 @@ export default function TobiramaFinancialOS() {
                   animate={{ opacity: 1 }}
                   className="text-xs text-red-500 font-mono"
                 >
-                  Clave inválida. Acceso restringido.
+                  Credenciales inválidas o clave incorrecta.
                 </motion.div>
               )}
 
