@@ -85,13 +85,13 @@ const getCategoryColor = (cat: string) => {
   return colors[hash % colors.length];
 };
 
-// --- CURRENCY UTILITY (Strict es-CO standard, no decimals) ---
+// --- CURRENCY UTILITY (Strict es-CO standard, with decimals) ---
 const formatCOP = (value: number): string => {
   return new Intl.NumberFormat("es-CO", {
     style: "currency",
     currency: "COP",
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
   }).format(value);
 };
 
@@ -111,10 +111,11 @@ export default function TobiramaFinancialOS() {
   // --- AUTHENTICATION STATE ---
   const [isAuthenticated, setIsAuthenticated] = useState(() => {
     if (typeof window !== "undefined") {
-      return localStorage.getItem("tobirama_auth") === "true";
+      return localStorage.getItem("tobirama_auth") === "true" && !!localStorage.getItem("tobirama_user");
     }
     return false;
   });
+  const [usernameInput, setUsernameInput] = useState("");
   const [passwordInput, setPasswordInput] = useState("");
   const [loginError, setLoginError] = useState(false);
 
@@ -197,10 +198,13 @@ export default function TobiramaFinancialOS() {
   // Real-time API synchronization helpers
   const fetchFromServer = async () => {
     try {
+      const headers = {
+        "x-user-id": typeof window !== "undefined" ? localStorage.getItem("tobirama_user") || "default" : "default"
+      };
       const [txRes, budgetRes, creditsRes] = await Promise.all([
-        fetch("/api/transactions"),
-        fetch("/api/budget"),
-        fetch("/api/credits")
+        fetch("/api/transactions", { headers }),
+        fetch("/api/budget", { headers }),
+        fetch("/api/credits", { headers })
       ]);
       if (txRes.ok && budgetRes.ok && creditsRes.ok) {
         const txData = await txRes.json();
@@ -216,10 +220,12 @@ export default function TobiramaFinancialOS() {
   };
 
   useEffect(() => {
-    fetchFromServer();
-    const interval = setInterval(fetchFromServer, 4000);
-    return () => clearInterval(interval);
-  }, []);
+    if (isAuthenticated) {
+      fetchFromServer();
+      const interval = setInterval(fetchFromServer, 4000);
+      return () => clearInterval(interval);
+    }
+  }, [isAuthenticated]);
 
   // Default quickCategory to the first available category or 'Otra...' if empty
   useEffect(() => {
@@ -480,16 +486,21 @@ export default function TobiramaFinancialOS() {
 
   const handleLoginSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!usernameInput.trim()) {
+      setLoginError(true);
+      return;
+    }
     if (passwordInput === "tobirama2026" || passwordInput === "1208") {
       if (typeof window !== "undefined") {
         localStorage.setItem("tobirama_auth", "true");
+        localStorage.setItem("tobirama_user", usernameInput.trim().toLowerCase());
       }
       setIsAuthenticated(true);
       setLoginError(false);
       const now = new Date().toLocaleTimeString();
       setTerminalLogs((prev) => [
         ...prev,
-        `[${now}] SEGURIDAD: Usuario autenticado correctamente a través del Gateway local.`
+        `[${now}] SEGURIDAD: Usuario '${usernameInput.trim().toLowerCase()}' autenticado correctamente a través del Gateway local.`
       ]);
     } else {
       setLoginError(true);
@@ -506,8 +517,8 @@ export default function TobiramaFinancialOS() {
   const saveBudgetEdit = async () => {
     if (!editingItem) return;
 
-    const newPaid = parseInt(editPaidValue) || 0;
-    const newAssigned = parseInt(editAssignedValue) || 0;
+    const newPaid = parseFloat(editPaidValue) || 0;
+    const newAssigned = parseFloat(editAssignedValue) || 0;
 
     // Optimistically update budget items locally
     setBudgetItems((prev) =>
@@ -540,10 +551,14 @@ export default function TobiramaFinancialOS() {
     }
 
     try {
+      const headers = {
+        "Content-Type": "application/json",
+        "x-user-id": typeof window !== "undefined" ? localStorage.getItem("tobirama_user") || "default" : "default"
+      };
       // Update the budget item on database
       const budgetRes = await fetch("/api/budget", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify({
           id: editingItem.id,
           assigned: newAssigned,
@@ -556,7 +571,7 @@ export default function TobiramaFinancialOS() {
       if (adjustmentTx) {
         await fetch("/api/transactions", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers,
           body: JSON.stringify(adjustmentTx),
         });
       }
@@ -597,7 +612,10 @@ export default function TobiramaFinancialOS() {
     try {
       const res = await fetch("/api/budget", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+          "Content-Type": "application/json",
+          "x-user-id": typeof window !== "undefined" ? localStorage.getItem("tobirama_user") || "default" : "default"
+        },
         body: JSON.stringify({
           id: newItem.id,
           assigned: 0,
@@ -619,7 +637,7 @@ export default function TobiramaFinancialOS() {
   // Quick register transaction form submission (Vista C - Screen 2 style)
   const handleQuickRegister = async (e: React.FormEvent) => {
     e.preventDefault();
-    const amountVal = parseInt(quickAmount) || 0;
+    const amountVal = parseFloat(quickAmount) || 0;
     if (amountVal <= 0) return;
 
     const finalCategory = quickCategory === "Otra..." ? (customCategory.trim() || "Otros") : quickCategory;
@@ -671,7 +689,10 @@ export default function TobiramaFinancialOS() {
     try {
       const res = await fetch("/api/transactions", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+          "Content-Type": "application/json",
+          "x-user-id": typeof window !== "undefined" ? localStorage.getItem("tobirama_user") || "default" : "default"
+        },
         body: JSON.stringify(newTx),
       });
       if (!res.ok) {
@@ -724,6 +745,9 @@ export default function TobiramaFinancialOS() {
     try {
       const res = await fetch(`/api/transactions?id=${id}`, {
         method: "DELETE",
+        headers: {
+          "x-user-id": typeof window !== "undefined" ? localStorage.getItem("tobirama_user") || "default" : "default"
+        }
       });
       if (!res.ok) {
         throw new Error("Failed to delete transaction on DB");
@@ -755,6 +779,9 @@ export default function TobiramaFinancialOS() {
     try {
       const res = await fetch(`/api/budget?id=${id}`, {
         method: "DELETE",
+        headers: {
+          "x-user-id": typeof window !== "undefined" ? localStorage.getItem("tobirama_user") || "default" : "default"
+        }
       });
       if (!res.ok) {
         throw new Error("Failed to delete budget item on DB");
@@ -804,7 +831,12 @@ export default function TobiramaFinancialOS() {
           ]);
 
           try {
-            await fetch(`/api/transactions?id=${txToDelete.id}`, { method: "DELETE" });
+            await fetch(`/api/transactions?id=${txToDelete.id}`, { 
+              method: "DELETE",
+              headers: {
+                "x-user-id": typeof window !== "undefined" ? localStorage.getItem("tobirama_user") || "default" : "default"
+              }
+            });
             fetchFromServer();
           } catch (err) {
             console.error("Failed to delete credit payment transaction:", err);
@@ -844,7 +876,10 @@ export default function TobiramaFinancialOS() {
         try {
           await fetch("/api/transactions", {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: { 
+              "Content-Type": "application/json",
+              "x-user-id": typeof window !== "undefined" ? localStorage.getItem("tobirama_user") || "default" : "default"
+            },
             body: JSON.stringify(newTx),
           });
           fetchFromServer();
@@ -889,9 +924,13 @@ export default function TobiramaFinancialOS() {
     }
 
     try {
+      const headers = {
+        "Content-Type": "application/json",
+        "x-user-id": typeof window !== "undefined" ? localStorage.getItem("tobirama_user") || "default" : "default"
+      };
       await fetch("/api/budget", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify({
           id: item.id,
           assigned: item.assigned,
@@ -905,7 +944,7 @@ export default function TobiramaFinancialOS() {
       if (adjustmentTx) {
         await fetch("/api/transactions", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers,
           body: JSON.stringify(adjustmentTx),
         });
       }
@@ -928,6 +967,9 @@ export default function TobiramaFinancialOS() {
     try {
       const res = await fetch("/api/reset", {
         method: "POST",
+        headers: {
+          "x-user-id": typeof window !== "undefined" ? localStorage.getItem("tobirama_user") || "default" : "default"
+        }
       });
       if (!res.ok) {
         throw new Error("Failed to reset DB on server");
@@ -948,9 +990,9 @@ export default function TobiramaFinancialOS() {
 
   const handleAddCreditSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const totalAmt = parseInt(creditForm.totalAmount) || 0;
-    const remainingAmt = parseInt(creditForm.remainingAmount) || 0;
-    const monthlyPay = parseInt(creditForm.monthlyPayment) || 0;
+    const totalAmt = parseFloat(creditForm.totalAmount) || 0;
+    const remainingAmt = parseFloat(creditForm.remainingAmount) || 0;
+    const monthlyPay = parseFloat(creditForm.monthlyPayment) || 0;
     const totalInst = parseInt(creditForm.totalInstallments) || 0;
     const paidInst = parseInt(creditForm.paidInstallments) || 0;
     const categoryVal = creditForm.category.trim();
@@ -959,7 +1001,7 @@ export default function TobiramaFinancialOS() {
 
     const newCredit: Credit = {
       id: `c-${Date.now()}`,
-      name: creditForm.name,
+      name: creditForm.name.trim(),
       totalAmount: totalAmt,
       remainingAmount: remainingAmt,
       monthlyPayment: monthlyPay,
@@ -990,7 +1032,10 @@ export default function TobiramaFinancialOS() {
     try {
       const res = await fetch("/api/credits", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+          "Content-Type": "application/json",
+          "x-user-id": typeof window !== "undefined" ? localStorage.getItem("tobirama_user") || "default" : "default"
+        },
         body: JSON.stringify(newCredit)
       });
       if (!res.ok) {
@@ -1019,7 +1064,10 @@ export default function TobiramaFinancialOS() {
 
     try {
       const res = await fetch(`/api/credits?id=${id}`, {
-        method: "DELETE"
+        method: "DELETE",
+        headers: {
+          "x-user-id": typeof window !== "undefined" ? localStorage.getItem("tobirama_user") || "default" : "default"
+        }
       });
       if (!res.ok) {
         throw new Error("Failed to delete credit on server");
@@ -1654,7 +1702,7 @@ export default function TobiramaFinancialOS() {
                     <div className="flex justify-between items-start mb-6">
                       <div>
                         <span className="text-[9px] text-slate-500 uppercase tracking-widest font-mono block font-semibold">TRAYECTORIA MENSUAL</span>
-                        <h4 className="text-sm font-bold text-white mt-1">Velocidad del Capital</h4>
+                        <h4 className="text-sm font-bold text-white mt-1 uppercase tracking-wider">VELOCIDAD DEL CAPITAL</h4>
                       </div>
                       <div className="text-right font-mono">
                         <span className="text-lg font-bold text-white">{formatCOP(pocketLiquidity)}</span>
@@ -1710,7 +1758,7 @@ export default function TobiramaFinancialOS() {
                   <div className="lg:col-span-4 glass-panel rounded-2xl p-6 flex flex-col justify-between bg-[#0a0b0d]/50 border-white/[0.04] hover:border-white/[0.08] transition-all">
                     <div>
                       <span className="text-[10px] text-slate-500 uppercase tracking-widest font-mono font-semibold">CONTROL DE CAJA</span>
-                      <h4 className="text-sm font-bold text-white mt-1">Eficiencia y Liquidez</h4>
+                      <h4 className="text-sm font-bold text-white mt-1 uppercase tracking-wider">EFICIENCIA Y LIQUIDEZ</h4>
                     </div>
 
                     <div className="grid grid-cols-12 gap-4 my-4 items-center">
@@ -1775,7 +1823,7 @@ export default function TobiramaFinancialOS() {
                   <div className="flex justify-between items-center mb-6">
                     <div>
                       <span className="text-[9px] text-slate-500 uppercase tracking-widest font-mono block font-semibold font-mono">CENTRO DE ANÁLISIS Y FLUJO DE CAJA</span>
-                      <h4 className="text-sm font-bold text-white mt-1">Diagnóstico de Movimientos y Reportes</h4>
+                      <h4 className="text-sm font-bold text-white mt-1 uppercase tracking-wider">DIAGNÓSTICO DE MOVIMIENTOS Y REPORTES</h4>
                     </div>
                     <span className="text-[10px] text-emerald-400 font-mono animate-pulse">● Sincronizado en tiempo real</span>
                   </div>
@@ -1910,7 +1958,7 @@ export default function TobiramaFinancialOS() {
                   <div className="flex justify-between items-center mb-6">
                     <div>
                       <span className="text-[9px] text-slate-500 uppercase tracking-widest font-mono block font-semibold">SEGUIMIENTO DE CRÉDITOS</span>
-                      <h4 className="text-sm font-bold text-white mt-1">Créditos y Obligaciones Financieras</h4>
+                      <h4 className="text-sm font-bold text-white mt-1 uppercase tracking-wider">CRÉDITOS Y OBLIGACIONES FINANCIERAS</h4>
                     </div>
                     <button
                       onClick={() => setShowCreditModal(true)}
@@ -2006,7 +2054,7 @@ export default function TobiramaFinancialOS() {
                 <div className="glass-panel rounded-2xl p-6 bg-[#0a0b0d]/50 border-white/[0.04]">
                   <div className="flex justify-between items-center mb-6">
                     <div>
-                      <h4 className="text-base font-bold text-white">Compromisos Presupuestales</h4>
+                      <h4 className="text-base font-bold text-white uppercase tracking-wider">COMPROMISOS PRESUPUESTALES</h4>
                       <p className="text-xs text-slate-600">Volumen financiero de abonos y nivel de ejecución real.</p>
                     </div>
                     <button onClick={() => setActiveView("audit")} className="text-xs text-slate-400 hover:text-white hover:underline transition-colors">Ver todos</button>
@@ -2151,10 +2199,16 @@ export default function TobiramaFinancialOS() {
                           
                           <input
                             type="text"
-                            inputMode="numeric"
-                            value={quickAmount === "0" ? "" : new Intl.NumberFormat("es-CO").format(parseInt(quickAmount) || 0)}
+                            inputMode="decimal"
+                            step="any"
+                            value={quickAmount === "0" ? "" : quickAmount}
                             onChange={(e) => {
-                              const cleanVal = e.target.value.replace(/\D/g, "");
+                              let cleanVal = e.target.value.replace(",", ".");
+                              cleanVal = cleanVal.replace(/[^0-9.]/g, "");
+                              const parts = cleanVal.split(".");
+                              if (parts.length > 2) {
+                                cleanVal = parts[0] + "." + parts.slice(1).join("");
+                              }
                               setQuickAmount(cleanVal || "0");
                             }}
                             className="w-full bg-transparent border-0 p-0 text-xl font-bold font-mono text-slate-100 placeholder-slate-700 focus:outline-none focus:ring-0 leading-none"
@@ -2199,7 +2253,7 @@ export default function TobiramaFinancialOS() {
                                 type="button"
                                 onClick={() => {
                                   setQuickAmount((prev) => {
-                                    const current = parseInt(prev) || 0;
+                                    const current = parseFloat(prev) || 0;
                                     return (current + pill.value).toString();
                                   });
                                 }}
@@ -2474,9 +2528,9 @@ export default function TobiramaFinancialOS() {
                       {/* Large Glowing Confirm Button */}
                       <button
                         onClick={handleQuickRegister}
-                        disabled={parseInt(quickAmount) === 0 || isScanning}
+                        disabled={parseFloat(quickAmount) === 0 || isScanning}
                         className={`w-full py-3.5 rounded-2xl bg-gradient-to-r from-emerald-500 to-green-400 hover:from-emerald-400 hover:to-green-300 text-black font-bold tracking-widest uppercase text-xs shadow-lg shadow-emerald-500/5 transition-all active:scale-[0.99] flex items-center justify-center gap-1.5 cursor-pointer ${
-                          parseInt(quickAmount) === 0 || isScanning ? "opacity-35 pointer-events-none" : ""
+                          parseFloat(quickAmount) === 0 || isScanning ? "opacity-35 pointer-events-none" : ""
                         }`}
                       >
                         Confirmar Transacción ⚡
@@ -2507,7 +2561,7 @@ export default function TobiramaFinancialOS() {
                       <div className="flex justify-between items-center mb-6">
                         <div className="flex items-center gap-2">
                           <Activity className="h-5 w-5 text-slate-400" />
-                          <h4 className="text-base font-bold text-white">Libro de Movimientos</h4>
+                          <h4 className="text-base font-bold text-white uppercase tracking-wider">LIBRO DE MOVIMIENTOS</h4>
                         </div>
                         <span className="text-xs font-mono text-slate-550">
                           {transactions.filter(t => t.date.startsWith(selectedMonth)).length} de {transactions.length} registros
@@ -2613,7 +2667,7 @@ export default function TobiramaFinancialOS() {
               >
                 <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                   <div>
-                    <h3 className="text-2xl font-bold tracking-tight text-white">Matriz de Control Mensual</h3>
+                    <h3 className="text-2xl font-bold tracking-tight text-white uppercase tracking-wider">MATRIZ DE CONTROL MENSUAL</h3>
                     <p className="text-sm text-slate-400 font-mono text-xs">Auditoría presupuestaria de gastos fijos y variables.</p>
                   </div>
                   
@@ -2751,7 +2805,7 @@ export default function TobiramaFinancialOS() {
                   <div className="flex justify-between items-center border-b border-white/[0.04] pb-2">
                     <div>
                       <span className="text-[9px] text-slate-500 uppercase tracking-widest font-mono block font-semibold">PANEL ADMINISTRATIVO</span>
-                      <h4 className="text-sm font-bold text-white mt-1">Mantenimiento de Base de Datos</h4>
+                      <h4 className="text-sm font-bold text-white mt-1 uppercase tracking-wider">MANTENIMIENTO DE BASE DE DATOS</h4>
                     </div>
                     <span className="text-[10px] text-slate-500 font-mono">
                       Estado: <span className="text-emerald-400 font-bold">CONECTADO</span>
@@ -2798,7 +2852,7 @@ export default function TobiramaFinancialOS() {
             >
               <div className="flex justify-between items-center">
                 <div>
-                  <h4 className="text-base font-bold text-white">Editar Registro</h4>
+                  <h4 className="text-base font-bold text-white uppercase tracking-wider">EDITAR REGISTRO</h4>
                   <p className="text-xs text-slate-500">{editingItem.item} ({editingItem.category})</p>
                 </div>
                 <button
@@ -2816,6 +2870,7 @@ export default function TobiramaFinancialOS() {
                     <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 font-mono">$</span>
                     <input
                       type="number"
+                      step="any"
                       value={editAssignedValue}
                       onChange={(e) => setEditAssignedValue(e.target.value)}
                       className="w-full pl-8 pr-4 py-2.5 rounded-xl border border-white/[0.06] bg-black text-sm font-mono text-slate-200 focus:border-white/[0.15]"
@@ -2829,6 +2884,7 @@ export default function TobiramaFinancialOS() {
                     <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 font-mono">$</span>
                     <input
                       type="number"
+                      step="any"
                       value={editPaidValue}
                       onChange={(e) => setEditPaidValue(e.target.value)}
                       className="w-full pl-8 pr-4 py-2.5 rounded-xl border border-white/[0.06] bg-black text-sm font-mono text-slate-200 focus:border-blue-500/50"
@@ -2939,6 +2995,7 @@ export default function TobiramaFinancialOS() {
                       <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 font-mono text-xs">$</span>
                       <input
                         type="number"
+                        step="any"
                         required
                         placeholder="3000000"
                         value={creditForm.totalAmount}
@@ -2954,6 +3011,7 @@ export default function TobiramaFinancialOS() {
                       <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 font-mono text-xs">$</span>
                       <input
                         type="number"
+                        step="any"
                         required
                         placeholder="1200000"
                         value={creditForm.remainingAmount}
@@ -2993,6 +3051,7 @@ export default function TobiramaFinancialOS() {
                     <label className="block text-[10px] font-mono uppercase text-slate-550 mb-1">Pago Mensual</label>
                     <input
                       type="number"
+                      step="any"
                       required
                       placeholder="300000"
                       value={creditForm.monthlyPayment}
