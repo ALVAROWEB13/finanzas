@@ -21,7 +21,11 @@ import {
   HelpCircle,
   Send,
   Terminal,
-  Plus
+  Plus,
+  Trash2,
+  Mic,
+  Upload,
+  Check
 } from "lucide-react";
 
 // --- TYPES ---
@@ -199,12 +203,22 @@ export default function TobiramaFinancialOS() {
   const [editAssignedValue, setEditAssignedValue] = useState("");
 
   // --- QUICK REGISTRATION FORM STATE (Optimized to match screen 2) ---
+  const [inputMode, setInputMode] = useState<"keypad" | "voice" | "invoice">("keypad");
   const [quickAmount, setQuickAmount] = useState("0");
   const [quickCategory, setQuickCategory] = useState<Category>("Estilo de Vida / Mercado");
   const [quickMethod, setQuickMethod] = useState<PaymentMethod>("Débito");
   const [quickType, setQuickType] = useState<TransactionType>("Gasto Extra");
   const [quickDescription, setQuickDescription] = useState("");
   const [quickSuccessMsg, setQuickSuccessMsg] = useState(false);
+
+  // Voice States
+  const [isListening, setIsListening] = useState(false);
+  const [voiceText, setVoiceText] = useState("");
+  const [voiceParsedInfo, setVoiceParsedInfo] = useState<string | null>(null);
+
+  // Invoice States
+  const [isScanning, setIsScanning] = useState(false);
+  const [scanSuccess, setScanSuccess] = useState(false);
 
   // --- TERMINAL LOGS STATE (Optimized to match screen 1) ---
   const [terminalInput, setTerminalInput] = useState("");
@@ -289,7 +303,6 @@ export default function TobiramaFinancialOS() {
 
   // --- DYNAMIC ASSET TRAJECTORY GENERATOR (SVG-based Wave Chart) ---
   const { chartPathData, trajectoryPoints } = useMemo(() => {
-    // Sort transactions chronologically to build day-by-day trajectory
     const sortedTxs = [...transactions].sort((a, b) => a.date.localeCompare(b.date));
     
     let currentBalance = 0;
@@ -301,7 +314,6 @@ export default function TobiramaFinancialOS() {
       } else {
         currentBalance -= tx.amount;
       }
-      // Ensure we register balance points
       points.push({ date: tx.date, balance: currentBalance });
     });
 
@@ -320,7 +332,6 @@ export default function TobiramaFinancialOS() {
       return { x, y, balance: p.balance, date: p.date };
     });
     
-    // Draw smooth line path
     let linePath = "";
     if (svgPoints.length > 0) {
       linePath = `M ${svgPoints[0].x} ${svgPoints[0].y}`;
@@ -444,7 +455,193 @@ export default function TobiramaFinancialOS() {
     setQuickSuccessMsg(true);
     setQuickAmount("0");
     setQuickDescription("");
-    setTimeout(() => setQuickSuccessMsg(false), 3000);
+    setTimeout(() => setQuickSuccessMsg(false), 3500);
+  };
+
+  // REACTIVE TRANSACTION DELETION (Clear data cleanly)
+  const handleDeleteTransaction = (id: string) => {
+    const txToDelete = transactions.find((t) => t.id === id);
+    if (!txToDelete) return;
+
+    // Remove from central list
+    setTransactions((prev) => prev.filter((t) => t.id !== id));
+
+    // Reactively subtract the payment from the corresponding budget item if it was an expense
+    if (txToDelete.type === "Gasto Extra" || txToDelete.type === "Movimiento a Reserva") {
+      setBudgetItems((prev) =>
+        prev.map((item) => {
+          if (item.category === txToDelete.category) {
+            return {
+              ...item,
+              paid: Math.max(0, item.paid - txToDelete.amount),
+            };
+          }
+          return item;
+        })
+      );
+    }
+
+    // Append terminal logs
+    const timeStr = new Date().toLocaleTimeString();
+    setTerminalLogs((prev) => [
+      ...prev,
+      `[${timeStr}] ELIMINACIÓN: Transacción '${txToDelete.description}' de ${formatCOP(txToDelete.amount)} fue eliminada del Ledger.`
+    ]);
+  };
+
+  // --- VOICE SPEECH RECOGNITION PARSER (Web Speech API) ---
+  const handleVoiceListen = () => {
+    const SpeechRecognitionClass =
+      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+
+    if (!SpeechRecognitionClass) {
+      alert("Tu navegador no soporta el reconocimiento de voz. Usa Chrome, Edge o Safari.");
+      // Simulated fallback for demonstration
+      simulateVoiceInput();
+      return;
+    }
+
+    const recognition = new SpeechRecognitionClass();
+    recognition.lang = "es-CO";
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+
+    recognition.onstart = () => {
+      setIsListening(true);
+      setVoiceText("Escuchando... Habla ahora...");
+      setVoiceParsedInfo(null);
+    };
+
+    recognition.onerror = () => {
+      setIsListening(false);
+      setVoiceText("Error al capturar voz. Inténtelo de nuevo.");
+    };
+
+    recognition.onend = () => {
+      setIsListening(false);
+    };
+
+    recognition.onresult = (event: any) => {
+      const speechToText = event.results[0][0].transcript;
+      setVoiceText(`Dijiste: "${speechToText}"`);
+      parseVoiceCommand(speechToText);
+    };
+
+    recognition.start();
+  };
+
+  // Simulated voice parsing fallback
+  const simulateVoiceInput = () => {
+    setIsListening(true);
+    setVoiceText("Simulando comando de voz...");
+    setTimeout(() => {
+      const mockCommands = [
+        "gasto ciento cuarenta mil pesos en mercado con tarjeta",
+        "gasto sesenta y cinco mil pesos en gastos fijos con debito",
+        "ingreso cincuenta mil pesos",
+        "reserva o ahorro doscientos mil en nu"
+      ];
+      const selected = mockCommands[Math.floor(Math.random() * mockCommands.length)];
+      setVoiceText(`Simulado: "${selected}"`);
+      parseVoiceCommand(selected);
+      setIsListening(false);
+    }, 1500);
+  };
+
+  // Parse voice text for numeric amounts, categories, and payment methods
+  const parseVoiceCommand = (text: string) => {
+    const cleaned = text.toLowerCase();
+    
+    // Parse Amount (Extract digits or translate key Spanish numbers)
+    let parsedAmount = 0;
+    
+    // Check digits
+    const digitMatch = cleaned.match(/\d+/g);
+    if (digitMatch) {
+      parsedAmount = parseInt(digitMatch.join(""));
+    } else {
+      // Basic text parser for Spanish numbers
+      if (cleaned.includes("cien mil")) parsedAmount = 100000;
+      else if (cleaned.includes("doscientos mil")) parsedAmount = 200000;
+      else if (cleaned.includes("cincuenta mil")) parsedAmount = 50000;
+      else if (cleaned.includes("sesenta mil")) parsedAmount = 60000;
+      else if (cleaned.includes("ochenta mil")) parsedAmount = 80000;
+      else if (cleaned.includes("ciento cuarenta mil")) parsedAmount = 140000;
+      else if (cleaned.includes("un millon") || cleaned.includes("un millón")) parsedAmount = 1000000;
+    }
+
+    // Parse Category
+    let category: Category = "Estilo de Vida / Mercado";
+    if (cleaned.includes("vivienda") || cleaned.includes("cuota") || cleaned.includes("tamarindo")) {
+      category = "Vivienda";
+    } else if (cleaned.includes("deuda") || cleaned.includes("addi") || cleaned.includes("credito") || cleaned.includes("crédito")) {
+      category = "Deudas de Consumo";
+    } else if (cleaned.includes("tarjeta") || cleaned.includes("cupo")) {
+      category = "Tarjetas de Crédito";
+    } else if (cleaned.includes("fijo") || cleaned.includes("internet") || cleaned.includes("madre") || cleaned.includes("apoyo")) {
+      category = "Gastos Fijos";
+    } else if (cleaned.includes("ahorro") || cleaned.includes("reserva") || cleaned.includes("nu") || cleaned.includes("lulo")) {
+      category = "Ahorro / Reserva";
+    } else if (cleaned.includes("mercado") || cleaned.includes("estilo") || cleaned.includes("comida") || cleaned.includes("restaurante")) {
+      category = "Estilo de Vida / Mercado";
+    }
+
+    // Parse Method
+    let method: PaymentMethod = "Débito";
+    if (cleaned.includes("debito") || cleaned.includes("débito")) {
+      method = "Débito";
+    } else if (cleaned.includes("tarjeta") || cleaned.includes("credito") || cleaned.includes("crédito") || cleaned.includes("tc")) {
+      method = "TC";
+    } else if (cleaned.includes("efectivo") || cleaned.includes("plata")) {
+      method = "Efectivo";
+    }
+
+    // Parse Transaction Type
+    let type: TransactionType = "Gasto Extra";
+    if (cleaned.includes("ingreso") || cleaned.includes("nomina") || cleaned.includes("nómina")) {
+      type = "Ingreso";
+    } else if (cleaned.includes("ahorro") || cleaned.includes("reserva") || cleaned.includes("guardar")) {
+      type = "Movimiento a Reserva";
+    }
+
+    if (parsedAmount > 0) {
+      setQuickAmount(parsedAmount.toString());
+      setQuickCategory(category);
+      setQuickMethod(method);
+      setQuickType(type);
+      setQuickDescription(`Voz: ${text.length > 30 ? text.slice(0, 28) + "..." : text}`);
+      setVoiceParsedInfo(`Monto: ${formatCOP(parsedAmount)} | Categoría: ${category} | Método: ${method}`);
+    } else {
+      setVoiceParsedInfo("No se pudo identificar el monto. Intente diciendo la cantidad en números.");
+    }
+  };
+
+  // --- INVOICE UPLOAD SCANNER (Simulated Laser Scan Animation) ---
+  const handleInvoiceUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      setIsScanning(true);
+      setScanSuccess(false);
+      
+      // Simulate visual laser scanning line for 1.8 seconds
+      setTimeout(() => {
+        setIsScanning(false);
+        setScanSuccess(true);
+        
+        // Randomize mock scan values to represent scanning output
+        const mockInvoice = {
+          amount: 145000,
+          description: "Factura Éxito #8841",
+          category: "Estilo de Vida / Mercado" as Category,
+          method: "Débito" as PaymentMethod
+        };
+        
+        setQuickAmount(mockInvoice.amount.toString());
+        setQuickDescription(mockInvoice.description);
+        setQuickCategory(mockInvoice.category);
+        setQuickMethod(mockInvoice.method);
+        setQuickType("Gasto Extra");
+      }, 1800);
+    }
   };
 
   // Terminal commands handling
@@ -578,7 +775,6 @@ export default function TobiramaFinancialOS() {
       {/* --- SIDEBAR DESKTOP --- */}
       <aside className="hidden md:flex flex-col w-24 border-r border-white/[0.04] bg-[#050505] p-6 flex-shrink-0 z-20 items-center justify-between">
         <div className="flex flex-col items-center gap-10">
-          {/* Logo Brand Emblem (Screen 2: big letter T) */}
           <div className="h-12 w-12 rounded-xl bg-white/[0.02] border border-white/[0.08] flex items-center justify-center font-bold font-mono text-xl text-white">
             T
           </div>
@@ -598,7 +794,7 @@ export default function TobiramaFinancialOS() {
                   onClick={() => setActiveView(item.id as "dashboard" | "reporting" | "tracker" | "audit")}
                   title={item.label}
                   className={`relative h-12 w-12 rounded-xl flex items-center justify-center transition-all duration-300 ${
-                    isActive ? "text-white bg-white/[0.04] border border-white/[0.08]" : "text-slate-600 hover:text-slate-300 hover:bg-white/[0.02]"
+                    isActive ? "text-white bg-white/[0.04] border border-white/[0.08]" : "text-slate-600 hover:text-slate-350 hover:bg-white/[0.02]"
                   }`}
                 >
                   <Icon className="h-5 w-5" />
@@ -608,8 +804,7 @@ export default function TobiramaFinancialOS() {
           </nav>
         </div>
 
-        {/* Bottom utility */}
-        <div className="h-12 w-12 rounded-xl flex items-center justify-center text-slate-600 hover:text-slate-300 cursor-pointer">
+        <div className="h-12 w-12 rounded-xl flex items-center justify-center text-slate-600 hover:text-slate-350 cursor-pointer">
           <HelpCircle className="h-5 w-5" />
         </div>
       </aside>
@@ -698,7 +893,6 @@ export default function TobiramaFinancialOS() {
             <div className="hidden md:flex items-center gap-8">
               <h2 className="text-sm font-bold tracking-widest text-white uppercase">Tobirama OS</h2>
               
-              {/* Internal view selector tabs (Screen 1 style) */}
               <div className="flex gap-1 p-0.5 bg-[#0a0a0c] rounded-lg border border-white/[0.04]">
                 {[
                   { id: "dashboard", label: "Torre de Control" },
@@ -712,7 +906,7 @@ export default function TobiramaFinancialOS() {
                       key={tab.id}
                       onClick={() => setActiveView(tab.id as "dashboard" | "reporting" | "tracker" | "audit")}
                       className={`relative px-4 py-1.5 rounded-md text-xs font-semibold tracking-wide transition-all cursor-pointer ${
-                        isActive ? "text-white font-bold" : "text-slate-500 hover:text-slate-300"
+                        isActive ? "text-white font-bold" : "text-slate-500 hover:text-slate-350"
                       }`}
                     >
                       {isActive && (
@@ -730,7 +924,6 @@ export default function TobiramaFinancialOS() {
             </div>
           </div>
 
-          {/* Right Header items matching screen 1: Search, Notification, History, settings, User */}
           <div className="flex items-center gap-4">
             <div className="relative hidden md:block">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-600" />
@@ -754,7 +947,6 @@ export default function TobiramaFinancialOS() {
               <Sliders className="h-4 w-4" />
             </button>
 
-            {/* Profile Avatar mockup */}
             <div className="h-7 w-7 rounded-full bg-gradient-to-tr from-zinc-700 to-zinc-600 border border-white/[0.08] flex items-center justify-center font-bold text-[10px] text-white">
               CF
             </div>
@@ -775,10 +967,9 @@ export default function TobiramaFinancialOS() {
                 transition={{ duration: 0.3, ease: "easeInOut" }}
                 className="space-y-6"
               >
-                {/* Visual Top stats cards matching Screen 1 */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                   
-                  {/* Card 1: Patrimonio Neto (Activos Totales) */}
+                  {/* Card 1: Patrimonio Neto */}
                   <div className="relative glass-panel rounded-2xl p-6 flex flex-col justify-between min-h-[160px] group transition-all hover:border-emerald-500/20 bg-[#0a0b0d]/50 border-white/[0.04]">
                     <div className="flex justify-between items-start">
                       <div>
@@ -800,7 +991,7 @@ export default function TobiramaFinancialOS() {
                     </div>
                   </div>
 
-                  {/* Card 2: Burnout Mensual (Gasto Mensual) */}
+                  {/* Card 2: Burnout Mensual */}
                   <div className="relative glass-panel rounded-2xl p-6 flex flex-col justify-between min-h-[160px] group transition-all hover:border-red-500/20 bg-[#0a0b0d]/50 border-white/[0.04]">
                     <div className="flex justify-between items-start">
                       <div>
@@ -840,7 +1031,6 @@ export default function TobiramaFinancialOS() {
                       </div>
                     </div>
 
-                    {/* Circular SVG Gauge matching Screen 1 */}
                     <div className="relative h-24 w-24 flex items-center justify-center">
                       <svg className="h-full w-full -rotate-90">
                         <circle cx="48" cy="48" r="38" stroke="rgba(255,255,255,0.01)" strokeWidth="6" fill="none"/>
@@ -867,10 +1057,9 @@ export default function TobiramaFinancialOS() {
 
                 </div>
 
-                {/* Dashboard layout center grids matching screen 1 */}
                 <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
                   
-                  {/* Column 1: System Status Node List (Ledger, API) */}
+                  {/* Column 1: System Status Node List */}
                   <div className="lg:col-span-4 glass-panel rounded-2xl p-6 flex flex-col justify-between bg-[#0a0b0d]/50 border-white/[0.04]">
                     <div>
                       <span className="text-[10px] text-slate-500 uppercase tracking-widest font-mono font-semibold">SISTEMA TOBIRAMA</span>
@@ -891,7 +1080,7 @@ export default function TobiramaFinancialOS() {
                     </div>
                   </div>
 
-                  {/* Column 2: Termómetro de Liquidez (Slide block visual) */}
+                  {/* Column 2: Termómetro de Liquidez */}
                   <div className="lg:col-span-4 glass-panel rounded-2xl p-6 flex flex-col justify-between bg-[#0a0b0d]/50 border-white/[0.04]">
                     <div>
                       <span className="text-[10px] text-slate-500 uppercase tracking-widest font-mono font-semibold">TERMÓMETRO DE LIQUIDEZ</span>
@@ -899,7 +1088,6 @@ export default function TobiramaFinancialOS() {
                     </div>
 
                     <div className="flex items-center gap-6 my-6">
-                      {/* Vertical slider slider mockup */}
                       <div className="w-8 h-36 rounded-full bg-black border border-white/[0.04] p-1 relative flex flex-col justify-end overflow-hidden">
                         <div className="absolute inset-0 bg-gradient-to-t from-blue-500/10 via-cyan-500/10 to-emerald-500/10" />
                         <motion.div 
@@ -934,7 +1122,7 @@ export default function TobiramaFinancialOS() {
                     </div>
                   </div>
 
-                  {/* Column 3: Command logs panel (Console simulator) */}
+                  {/* Column 3: Command logs panel */}
                   <div className="lg:col-span-4 glass-panel rounded-2xl p-6 flex flex-col justify-between min-h-[280px] bg-[#0a0b0d]/50 border-white/[0.04]">
                     <div>
                       <span className="text-[10px] text-slate-500 uppercase tracking-widest font-mono font-semibold">CONSOLA OPERATIVA</span>
@@ -972,7 +1160,7 @@ export default function TobiramaFinancialOS() {
 
                 </div>
 
-                {/* Bottom Recent Entities table mapping Screen 1 */}
+                {/* Bottom Recent Entities table mapping */}
                 <div className="glass-panel rounded-2xl p-6 bg-[#0a0b0d]/50 border-white/[0.04]">
                   <div className="flex justify-between items-center mb-6">
                     <div>
@@ -997,11 +1185,6 @@ export default function TobiramaFinancialOS() {
                           const outstanding = Math.max(0, item.assigned - item.paid);
                           const isPaid = outstanding === 0;
                           
-                          // Risk-bar style segments
-                          // 100% paid: 3 green blocks
-                          // 50-99% paid: 2 green/1 gray
-                          // 1-49% paid: 1 green/2 gray
-                          // 0% paid: 3 gray
                           const ratio = item.assigned > 0 ? item.paid / item.assigned : 1;
                           let segments = [false, false, false];
                           if (ratio >= 1.0) segments = [true, true, true];
@@ -1051,10 +1234,9 @@ export default function TobiramaFinancialOS() {
                   </div>
                 </div>
 
-                {/* Floating plus button for quick register shortcut */}
                 <button
                   onClick={() => setActiveView("tracker")}
-                  className="fixed bottom-6 right-6 h-12 w-12 rounded-full bg-white hover:bg-slate-200 active:scale-[0.98] transition-all flex items-center justify-center text-black shadow-lg z-30 cursor-pointer"
+                  className="fixed bottom-6 right-6 h-12 w-12 rounded-full bg-white hover:bg-slate-200 active:scale-[0.98] transition-all flex items-center justify-center text-black shadow-lg z-30 cursor-pointer animate-bounce"
                   title="Nueva Transacción Flash"
                 >
                   <Plus className="h-6 w-6" />
@@ -1091,7 +1273,7 @@ export default function TobiramaFinancialOS() {
 
                 <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
                   
-                  {/* Asset Trajectory Chart (SVG-based Wave Chart) */}
+                  {/* Asset Trajectory Chart */}
                   <div className="lg:col-span-8 glass-panel rounded-2xl p-6 bg-[#0a0b0d]/50 border-white/[0.04]">
                     <div className="flex justify-between items-start mb-6">
                       <div>
@@ -1104,7 +1286,6 @@ export default function TobiramaFinancialOS() {
                       </div>
                     </div>
 
-                    {/* Smooth glowing SVG wave path */}
                     <div className="relative h-60 w-full overflow-hidden bg-black border border-white/[0.04] rounded-xl p-4">
                       {chartPathData.linePath ? (
                         <svg className="w-full h-full" viewBox="0 0 500 150" preserveAspectRatio="none">
@@ -1114,18 +1295,13 @@ export default function TobiramaFinancialOS() {
                               <stop offset="100%" stopColor="#3b82f6" stopOpacity="0.0" />
                             </linearGradient>
                           </defs>
-                          {/* Grid lines */}
                           <line x1="0" y1="35" x2="500" y2="35" stroke="rgba(255,255,255,0.01)" strokeWidth="1" />
                           <line x1="0" y1="75" x2="500" y2="75" stroke="rgba(255,255,255,0.01)" strokeWidth="1" />
                           <line x1="0" y1="115" x2="500" y2="115" stroke="rgba(255,255,255,0.01)" strokeWidth="1" />
                           
-                          {/* Shaded Area */}
                           <path d={chartPathData.areaPath} fill="url(#chartGrad)" />
-                          
-                          {/* Smooth Line */}
                           <path d={chartPathData.linePath} stroke="#3b82f6" strokeWidth="2.5" fill="none" strokeLinecap="round" />
                           
-                          {/* Glow points */}
                           {chartPathData.points.map((pt, i) => (
                             <circle key={i} cx={pt.x} cy={pt.y} r="3.5" fill="#60a5fa" stroke="#000" strokeWidth="1.5" />
                           ))}
@@ -1136,7 +1312,6 @@ export default function TobiramaFinancialOS() {
                         </div>
                       )}
                       
-                      {/* X Axis labels based on actual transactions */}
                       <div className="flex justify-between items-center text-[8px] font-mono text-slate-600 mt-2">
                         {trajectoryPoints.length > 0 ? (
                           <>
@@ -1180,7 +1355,7 @@ export default function TobiramaFinancialOS() {
                       </span>
                     </div>
 
-                    {/* Capital Efficiency circular gauge (Total Paid vs Total Assigned) */}
+                    {/* Capital Efficiency circular gauge */}
                     <div className="glass-panel rounded-2xl p-6 bg-[#0a0b0d]/50 border-white/[0.04]">
                       <span className="text-[9px] text-slate-500 uppercase tracking-widest font-mono block mb-4 font-semibold">EFICIENCIA DE CAPITAL</span>
                       <div className="flex items-center gap-4">
@@ -1243,7 +1418,7 @@ export default function TobiramaFinancialOS() {
                   </div>
                 </div>
 
-                {/* Anomalies Detected table matching Screen 3 */}
+                {/* Operations Special table */}
                 <div className="glass-panel rounded-2xl p-6 bg-[#0a0b0d]/50 border-white/[0.04]">
                   <div className="flex justify-between items-center mb-6">
                     <div>
@@ -1276,8 +1451,8 @@ export default function TobiramaFinancialOS() {
                                 {isInc ? "+" : "-"}{formatCOP(tx.amount)}
                               </td>
                               <td className="px-6 py-4 text-center">
-                                <span className={`inline-flex items-center gap-1.5 ${isInc ? "text-emerald-400" : "text-slate-400"}`}>
-                                  <span className={`h-1.5 w-1.5 rounded-full ${isInc ? "bg-emerald-400" : "bg-slate-400"}`} />
+                                <span className="inline-flex items-center gap-1.5 text-emerald-400 font-semibold">
+                                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
                                   Reconciliado
                                 </span>
                               </td>
@@ -1292,7 +1467,7 @@ export default function TobiramaFinancialOS() {
               </motion.div>
             )}
 
-            {/* --- VISTA C: LIBRO DIARIO (REGISTRO FLASH - Screen 2 style) --- */}
+            {/* --- VISTA C: LIBRO DIARIO (REGISTRO FLASH) --- */}
             {activeView === "tracker" && (
               <motion.div
                 key="tracker"
@@ -1304,19 +1479,57 @@ export default function TobiramaFinancialOS() {
               >
                 <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
                   
-                  {/* Left Column: Visual Capture Form matching Screen 2 */}
+                  {/* Left Column: Visual Capture Form */}
                   <div className="lg:col-span-6 flex flex-col justify-center">
                     <div className="glass-panel-heavy rounded-3xl p-8 max-w-lg w-full mx-auto space-y-6 relative border border-white/[0.06] shadow-[0_0_50px_rgba(0,0,0,0.5)] bg-black">
+                      
+                      {/* Input Mode Selector tabs */}
+                      <div className="grid grid-cols-3 gap-1.5 p-1 bg-[#090a0c] rounded-xl border border-white/[0.02]">
+                        {[
+                          { id: "keypad", label: "Teclado" },
+                          { id: "voice", label: "Por Voz" },
+                          { id: "invoice", label: "Por Factura" }
+                        ].map((mode) => {
+                          const isSel = inputMode === mode.id;
+                          return (
+                            <button
+                              key={mode.id}
+                              type="button"
+                              onClick={() => {
+                                setInputMode(mode.id as any);
+                                setVoiceParsedInfo(null);
+                                setVoiceText("");
+                              }}
+                              className={`py-1.5 rounded-lg text-3xs font-bold uppercase tracking-wider font-mono transition-all cursor-pointer ${
+                                isSel ? "bg-black border border-white/[0.06] text-white" : "text-slate-550 hover:text-slate-300"
+                              }`}
+                            >
+                              {mode.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+
                       <div className="text-center space-y-1">
-                        <span className="text-[10px] text-slate-500 font-mono uppercase tracking-widest block font-semibold">NUEVO REGISTRO</span>
+                        <span className="text-[10px] text-slate-500 uppercase tracking-widest font-mono block font-semibold">NUEVO REGISTRO</span>
                         <h3 className="text-xl font-bold text-slate-200">
                           {quickType === "Ingreso" ? "Ingreso de Operación" : quickType === "Movimiento a Reserva" ? "Movimiento a Reserva" : "Gasto Extra de Caja"}
                         </h3>
                       </div>
 
                       {/* Display amount (Screen 2: big numbers) */}
-                      <div className="h-28 rounded-2xl bg-[#090a0c] border border-white/[0.02] flex items-center justify-center relative group">
-                        <span className="absolute left-6 text-slate-600 font-mono text-2xl font-bold">$</span>
+                      <div className="h-28 rounded-2xl bg-[#090a0c] border border-white/[0.02] flex items-center justify-center relative overflow-hidden group">
+                        <span className="absolute left-6 text-slate-650 font-mono text-2xl font-bold">$</span>
+                        
+                        {/* Laser scanner animation overlay for invoice uploads */}
+                        {isScanning && (
+                          <motion.div 
+                            className="absolute inset-x-0 h-1 bg-gradient-to-r from-transparent via-emerald-400 to-transparent shadow-[0_0_12px_#34d399] z-10"
+                            animate={{ top: ["0%", "100%", "0%"] }}
+                            transition={{ duration: 1.2, repeat: Infinity, ease: "linear" }}
+                          />
+                        )}
+
                         <div className="text-4xl font-bold font-mono text-slate-100 tracking-tight select-all">
                           {formatCOP(parseInt(quickAmount) || 0).replace("$", "").trim()}
                         </div>
@@ -1326,14 +1539,125 @@ export default function TobiramaFinancialOS() {
                       <div>
                         <input
                           type="text"
-                          placeholder="Descripción o Comercio (Ej. Mercado)"
+                          placeholder="Descripción o Comercio (Ej. Gasolina)"
                           value={quickDescription}
                           onChange={(e) => setQuickDescription(e.target.value)}
-                          className="w-full px-4 py-3 rounded-xl border border-white/[0.06] bg-black text-sm text-slate-200 focus:border-white/[0.15]"
+                          className="w-full px-4 py-3 rounded-xl border border-white/[0.06] bg-black text-sm text-slate-255 focus:border-white/[0.15]"
                         />
                       </div>
 
-                      {/* Category Selector Grid with clean icons (Screen 2 grid) */}
+                      {/* INPUT MODES ROUTING */}
+                      {inputMode === "keypad" && (
+                        /* Keyboard keypad digit keys grid */
+                        <div className="grid grid-cols-4 gap-2 pt-2 border-t border-white/[0.04]">
+                          {["1", "2", "3", "000"].map((key) => (
+                            <button
+                              key={key}
+                              type="button"
+                              onClick={() => handleDigitPress(key)}
+                              className="py-3 rounded-xl bg-[#090a0c]/80 hover:bg-[#090a0c] border border-white/[0.02] font-mono text-sm text-slate-300 transition-colors cursor-pointer"
+                            >
+                              {key}
+                            </button>
+                          ))}
+                          {["4", "5", "6", "0"].map((key) => (
+                            <button
+                              key={key}
+                              type="button"
+                              onClick={() => handleDigitPress(key)}
+                              className="py-3 rounded-xl bg-[#090a0c]/80 hover:bg-[#090a0c] border border-white/[0.02] font-mono text-sm text-slate-300 transition-colors cursor-pointer"
+                            >
+                              {key}
+                            </button>
+                          ))}
+                          {["7", "8", "9", "back"].map((key) => {
+                            const isBack = key === "back";
+                            return (
+                              <button
+                                key={key}
+                                type="button"
+                                onClick={isBack ? handleBackspace : () => handleDigitPress(key)}
+                                className={`py-3 rounded-xl border border-white/[0.02] font-mono text-sm text-slate-300 transition-colors cursor-pointer ${
+                                  isBack ? "bg-red-500/10 hover:bg-red-500/20 text-red-400" : "bg-[#090a0c]/80 hover:bg-[#090a0c]"
+                                }`}
+                              >
+                                {isBack ? "←" : key}
+                              </button>
+                            );
+                          })}
+                          <button
+                            type="button"
+                            onClick={() => setQuickAmount("0")}
+                            className="col-span-4 py-2 text-[10px] font-mono text-slate-600 hover:text-slate-350 transition-colors uppercase tracking-widest cursor-pointer"
+                          >
+                            Limpiar Teclado
+                          </button>
+                        </div>
+                      )}
+
+                      {inputMode === "voice" && (
+                        /* Voice Input Mode panel */
+                        <div className="py-4 border-t border-white/[0.04] text-center space-y-4">
+                          <button
+                            type="button"
+                            onClick={handleVoiceListen}
+                            className={`h-16 w-16 rounded-full flex items-center justify-center mx-auto transition-all cursor-pointer ${
+                              isListening 
+                                ? "bg-red-500/20 border border-red-500/40 text-red-400 animate-pulse" 
+                                : "bg-zinc-900 border border-white/[0.06] text-slate-300 hover:bg-zinc-800"
+                            }`}
+                          >
+                            <Mic className="h-6 w-6" />
+                          </button>
+                          
+                          <div className="space-y-1">
+                            <div className="text-xs font-mono text-slate-300 min-h-[16px]">
+                              {voiceText || "Presione el micrófono para grabar por voz..."}
+                            </div>
+                            <p className="text-[9px] text-slate-500 italic max-w-xs mx-auto">
+                              Ej. &quot;gasto cien mil pesos en mercado con debito&quot;
+                            </p>
+                          </div>
+
+                          {voiceParsedInfo && (
+                            <div className="p-3 rounded-xl bg-white/[0.02] border border-white/[0.06] font-mono text-3xs text-emerald-400">
+                              {voiceParsedInfo}
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {inputMode === "invoice" && (
+                        /* Invoice Upload scan panel */
+                        <div className="py-4 border-t border-white/[0.04] text-center space-y-4">
+                          <label className="border border-dashed border-white/[0.08] hover:border-white/[0.16] rounded-2xl p-6 flex flex-col items-center justify-center gap-2 cursor-pointer transition-all bg-[#090a0c]/20 hover:bg-[#090a0c]/50">
+                            <Upload className="h-5 w-5 text-slate-500" />
+                            <span className="text-xs font-mono text-slate-300">Arrastra tu factura aquí</span>
+                            <span className="text-[9px] text-slate-500">PDF, JPG o PNG hasta 5MB</span>
+                            <input
+                              type="file"
+                              accept="image/*,application/pdf"
+                              onChange={handleInvoiceUpload}
+                              className="hidden"
+                              disabled={isScanning}
+                            />
+                          </label>
+
+                          <div className="text-2xs font-mono text-slate-400">
+                            {isScanning ? (
+                              <span className="text-blue-400 animate-pulse">Analizando estructura de datos con OCR...</span>
+                            ) : scanSuccess ? (
+                              <span className="text-emerald-400 flex items-center justify-center gap-1">
+                                <Check className="h-3.5 w-3.5" /> Factura procesada exitosamente.
+                              </span>
+                            ) : (
+                              "Sube tu comprobante de egreso para auto-llenar los campos."
+                            )}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Category Selector Grid */}
                       <div className="space-y-2.5">
                         <span className="text-[9px] text-slate-500 uppercase tracking-widest font-mono block font-semibold">Categoría del Gasto</span>
                         <div className="grid grid-cols-3 gap-3">
@@ -1370,7 +1694,7 @@ export default function TobiramaFinancialOS() {
                                 type="button"
                                 onClick={() => setQuickMethod(method)}
                                 className={`py-2 rounded-lg text-2xs font-bold uppercase tracking-wider font-mono transition-all cursor-pointer ${
-                                  isSel ? "bg-black border border-white/[0.06] text-white shadow" : "text-slate-600 hover:text-slate-300"
+                                  isSel ? "bg-black border border-white/[0.06] text-white shadow" : "text-slate-650 hover:text-slate-300"
                                 }`}
                               >
                                 {method === "TC" ? "CRÉDITO" : method.toUpperCase()}
@@ -1401,65 +1725,19 @@ export default function TobiramaFinancialOS() {
                         })}
                       </div>
 
-                      {/* Virtual Digit keyboard for COP numeric entries */}
-                      <div className="grid grid-cols-4 gap-2 pt-2 border-t border-white/[0.04]">
-                        {["1", "2", "3", "000"].map((key) => (
-                          <button
-                            key={key}
-                            type="button"
-                            onClick={() => handleDigitPress(key)}
-                            className="py-3 rounded-xl bg-[#090a0c]/80 hover:bg-[#090a0c] border border-white/[0.02] font-mono text-sm text-slate-300 transition-colors cursor-pointer"
-                          >
-                            {key}
-                          </button>
-                        ))}
-                        {["4", "5", "6", "0"].map((key) => (
-                          <button
-                            key={key}
-                            type="button"
-                            onClick={() => handleDigitPress(key)}
-                            className="py-3 rounded-xl bg-[#090a0c]/80 hover:bg-[#090a0c] border border-white/[0.02] font-mono text-sm text-slate-300 transition-colors cursor-pointer"
-                          >
-                            {key}
-                          </button>
-                        ))}
-                        {["7", "8", "9", "back"].map((key) => {
-                          const isBack = key === "back";
-                          return (
-                            <button
-                              key={key}
-                              type="button"
-                              onClick={isBack ? handleBackspace : () => handleDigitPress(key)}
-                              className={`py-3 rounded-xl border border-white/[0.02] font-mono text-sm text-slate-300 transition-colors cursor-pointer ${
-                                isBack ? "bg-red-500/10 hover:bg-red-500/20 text-red-400" : "bg-[#090a0c]/80 hover:bg-[#090a0c]"
-                              }`}
-                            >
-                              {isBack ? "←" : key}
-                            </button>
-                          );
-                        })}
-                        <button
-                          type="button"
-                          onClick={() => setQuickAmount("0")}
-                          className="col-span-4 py-2 text-[10px] font-mono text-slate-600 hover:text-slate-300 transition-colors uppercase tracking-widest cursor-pointer"
-                        >
-                          Limpiar Teclado
-                        </button>
-                      </div>
-
-                      {/* Large Glowing Confirm Button (Screen 2 visual) */}
+                      {/* Large Glowing Confirm Button */}
                       <button
                         onClick={handleQuickRegister}
-                        disabled={parseInt(quickAmount) === 0}
+                        disabled={parseInt(quickAmount) === 0 || isScanning}
                         className={`w-full py-4 rounded-2xl bg-gradient-to-r from-emerald-500 to-green-400 hover:from-emerald-400 hover:to-green-300 text-black font-bold tracking-widest uppercase text-xs shadow-lg shadow-emerald-500/5 transition-all active:scale-[0.99] flex items-center justify-center gap-1.5 cursor-pointer ${
-                          parseInt(quickAmount) === 0 ? "opacity-35 pointer-events-none" : ""
+                          parseInt(quickAmount) === 0 || isScanning ? "opacity-35 pointer-events-none" : ""
                         }`}
                       >
                         Confirmar Transacción ⚡
                       </button>
 
                       {quickSuccessMsg && (
-                        <div className="absolute inset-x-8 bottom-24 p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-center font-mono text-2xs text-emerald-400">
+                        <div className="absolute inset-x-8 bottom-24 p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-center font-mono text-2xs text-emerald-400 z-20">
                           Movimiento registrado correctamente en el Ledger.
                         </div>
                       )}
@@ -1470,14 +1748,14 @@ export default function TobiramaFinancialOS() {
                           setQuickAmount("0");
                           setQuickDescription("");
                         }}
-                        className="text-center font-mono text-3xs text-slate-600 hover:text-slate-400 block w-full uppercase tracking-wider cursor-pointer"
+                        className="text-center font-mono text-3xs text-slate-650 hover:text-slate-450 block w-full uppercase tracking-wider cursor-pointer"
                       >
                         Cancelar Registro
                       </button>
                     </div>
                   </div>
 
-                  {/* Right Column: Dynamic Timeline audit feed */}
+                  {/* Right Column: Dynamic Timeline audit feed with DELETION */}
                   <div className="lg:col-span-6 space-y-6">
                     <div className="glass-panel rounded-3xl p-6 flex flex-col min-h-[480px] bg-[#0a0b0d]/50 border-white/[0.04]">
                       <div className="flex justify-between items-center mb-6">
@@ -1490,7 +1768,7 @@ export default function TobiramaFinancialOS() {
                         </span>
                       </div>
 
-                      <div className="flex-1 overflow-y-auto space-y-3 max-h-[520px] pr-2 scrollbar-thin">
+                      <div className="flex-1 overflow-y-auto space-y-3 max-h-[620px] pr-2 scrollbar-thin">
                         <AnimatePresence initial={false}>
                           {transactions.map((tx) => {
                             const isIncome = tx.type === "Ingreso";
@@ -1503,10 +1781,10 @@ export default function TobiramaFinancialOS() {
                                 animate={{ opacity: 1, scale: 1 }}
                                 exit={{ opacity: 0, scale: 0.95 }}
                                 transition={{ type: "spring", stiffness: 350, damping: 25 }}
-                                className="flex items-center justify-between p-4 rounded-xl border border-white/[0.02] bg-[#050608]/50 hover:bg-[#050608]/80 transition-colors"
+                                className="flex items-center justify-between p-4 rounded-xl border border-white/[0.02] bg-[#050608]/50 hover:bg-[#050608]/80 transition-colors group"
                               >
-                                <div className="flex items-center gap-3">
-                                  <div className={`h-9 w-9 rounded-lg flex items-center justify-center border ${
+                                <div className="flex items-center gap-3 min-w-0">
+                                  <div className={`h-9 w-9 rounded-lg flex items-center justify-center border flex-shrink-0 ${
                                     isIncome 
                                       ? "bg-emerald-500/10 border-emerald-500/25 text-emerald-400" 
                                       : isReserve
@@ -1522,37 +1800,48 @@ export default function TobiramaFinancialOS() {
                                     )}
                                   </div>
 
-                                  <div>
-                                    <div className="text-xs font-semibold text-slate-200">
+                                  <div className="min-w-0">
+                                    <div className="text-xs font-semibold text-slate-200 truncate" title={tx.description}>
                                       {tx.description}
                                     </div>
-                                    <div className="flex items-center gap-2 mt-1">
+                                    <div className="flex flex-wrap items-center gap-1.5 mt-1">
                                       <span className="text-[10px] font-mono text-slate-500">
                                         {tx.date}
                                       </span>
                                       <span className="text-[9px] font-mono bg-black border border-white/[0.04] text-slate-500 px-1.5 py-0.25 rounded">
                                         {tx.paymentMethod === "TC" ? "CRÉDITO" : tx.paymentMethod.toUpperCase()}
                                       </span>
-                                      <span className="text-[10px] font-semibold text-slate-500 font-mono">
+                                      <span className="text-[10px] font-semibold text-slate-550 font-mono">
                                         {tx.category}
                                       </span>
                                     </div>
                                   </div>
                                 </div>
 
-                                <div className="text-right">
-                                  <div className={`text-sm font-mono font-bold ${
-                                    isIncome 
-                                      ? "text-emerald-400" 
-                                      : isReserve
-                                        ? "text-blue-400"
-                                        : "text-red-400"
-                                  }`}>
-                                    {isIncome ? "+" : "-"}{formatCOP(tx.amount)}
+                                <div className="flex items-center gap-3 sm:gap-4 flex-shrink-0">
+                                  <div className="text-right">
+                                    <div className={`text-sm font-mono font-bold ${
+                                      isIncome 
+                                        ? "text-emerald-400" 
+                                        : isReserve
+                                          ? "text-blue-400"
+                                          : "text-red-400"
+                                    }`}>
+                                      {isIncome ? "+" : "-"}{formatCOP(tx.amount)}
+                                    </div>
+                                    <span className="text-[9px] font-mono uppercase text-slate-550 mt-0.5 block">
+                                      {tx.type}
+                                    </span>
                                   </div>
-                                  <span className="text-[9px] font-mono uppercase text-slate-500 mt-0.5 block">
-                                    {tx.type}
-                                  </span>
+
+                                  {/* Delete Transaction action button - fully responsive */}
+                                  <button
+                                    onClick={() => handleDeleteTransaction(tx.id)}
+                                    className="p-2 rounded bg-red-500/10 border border-red-500/20 text-red-400 hover:bg-red-500/20 transition-all opacity-100 md:opacity-0 md:group-hover:opacity-100 cursor-pointer flex-shrink-0"
+                                    title="Eliminar Registro"
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </button>
                                 </div>
                               </motion.div>
                             );
@@ -1657,7 +1946,6 @@ export default function TobiramaFinancialOS() {
       <AnimatePresence>
         {editingItem && (
           <div className="fixed inset-0 flex items-center justify-center z-50 p-4">
-            {/* Backdrop */}
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
@@ -1666,7 +1954,6 @@ export default function TobiramaFinancialOS() {
               className="absolute inset-0 bg-black/80 backdrop-blur-sm"
             />
 
-            {/* Modal Box */}
             <motion.div
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
@@ -1709,7 +1996,7 @@ export default function TobiramaFinancialOS() {
                       type="number"
                       value={editPaidValue}
                       onChange={(e) => setEditPaidValue(e.target.value)}
-                      className="w-full pl-8 pr-4 py-2.5 rounded-xl border border-white/[0.06] bg-black text-sm font-mono text-slate-200 focus:border-white/[0.15]"
+                      className="w-full pl-8 pr-4 py-2.5 rounded-xl border border-white/[0.06] bg-black text-sm font-mono text-slate-200 focus:border-blue-500/50"
                     />
                   </div>
                 </div>
