@@ -16,10 +16,10 @@ export async function POST(req: Request) {
   try {
     await initDb();
     const body = await req.json();
-    if (!body.id || body.assigned === undefined || body.paid === undefined) {
+    if (!body.id || body.assigned === undefined || body.paid === undefined || body.isFixed === undefined) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
     }
-    await updateBudgetItem(body.id, body.assigned, body.paid);
+    await updateBudgetItem(body.id, body.assigned, body.paid, body.isFixed, body.category, body.item);
     return NextResponse.json({ success: true });
   } catch (err: any) {
     console.error("API POST Budget failed:", err);

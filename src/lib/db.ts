@@ -5,6 +5,7 @@ import path from "path";
 
 const dbJsonPath = path.join(process.cwd(), "src", "data", "db.json");
 
+// --- TYPES ---
 export interface Transaction {
   id: string;
   date: string;
@@ -13,6 +14,7 @@ export interface Transaction {
   paymentMethod: string; // 'Débito' | 'TC' | 'Efectivo'
   category: string;
   amount: number;
+  isFixed: boolean; // Fixed vs Variable
 }
 
 export interface BudgetItem {
@@ -21,23 +23,24 @@ export interface BudgetItem {
   item: string;
   assigned: number;
   paid: number;
+  isFixed: boolean; // Fixed vs Variable
 }
 
-// Initial seed data exactly matching the user's uploaded spreadsheet!
+// Initial seed data with correct Fixed vs Variable classification!
 const initialBudgetItems: BudgetItem[] = [
-  { id: "b1", category: "Vivienda", item: "Vivienda", assigned: 0, paid: 0 },
-  { id: "b2", category: "Claro hogar", item: "Claro hogar", assigned: 0, paid: 0 },
-  { id: "b3", category: "Datos movistar", item: "Datos movistar", assigned: 0, paid: 0 },
-  { id: "b4", category: "Gym", item: "Gym", assigned: 0, paid: 0 },
-  { id: "b5", category: "Transporte", item: "Transporte", assigned: 0, paid: 0 },
-  { id: "b6", category: "Aseo personal", item: "Aseo personal", assigned: 0, paid: 0 },
-  { id: "b7", category: "Netflix", item: "Netflix", assigned: 0, paid: 0 },
-  { id: "b8", category: "Google", item: "Google", assigned: 0, paid: 0 },
-  { id: "b9", category: "Seguro de vida", item: "Seguro de vida", assigned: 0, paid: 0 },
-  { id: "b10", category: "Salidas", item: "Salidas", assigned: 0, paid: 0 },
-  { id: "b11", category: "Ahorro", item: "Ahorro", assigned: 0, paid: 0 },
-  { id: "b12", category: "Ahorro 1", item: "Ahorro 1", assigned: 0, paid: 0 },
-  { id: "b13", category: "CREDITO", item: "CREDITO", assigned: 0, paid: 0 }
+  { id: "b1", category: "Vivienda", item: "Vivienda", assigned: 0, paid: 0, isFixed: true },
+  { id: "b2", category: "Claro hogar", item: "Claro hogar", assigned: 0, paid: 0, isFixed: true },
+  { id: "b3", category: "Datos movistar", item: "Datos movistar", assigned: 0, paid: 0, isFixed: true },
+  { id: "b4", category: "Gym", item: "Gym", assigned: 0, paid: 0, isFixed: true },
+  { id: "b5", category: "Transporte", item: "Transporte", assigned: 0, paid: 0, isFixed: false },
+  { id: "b6", category: "Aseo personal", item: "Aseo personal", assigned: 0, paid: 0, isFixed: false },
+  { id: "b7", category: "Netflix", item: "Netflix", assigned: 0, paid: 0, isFixed: true },
+  { id: "b8", category: "Google", item: "Google", assigned: 0, paid: 0, isFixed: true },
+  { id: "b9", category: "Seguro de vida", item: "Seguro de vida", assigned: 0, paid: 0, isFixed: true },
+  { id: "b10", category: "Salidas", item: "Salidas", assigned: 0, paid: 0, isFixed: false },
+  { id: "b11", category: "Ahorro", item: "Ahorro", assigned: 0, paid: 0, isFixed: false },
+  { id: "b12", category: "Ahorro 1", item: "Ahorro 1", assigned: 0, paid: 0, isFixed: false },
+  { id: "b13", category: "CREDITO", item: "CREDITO", assigned: 0, paid: 0, isFixed: true }
 ];
 
 const initialTransactions: Transaction[] = [];
@@ -69,13 +72,24 @@ export const initDb = async () => {
   const pgPool = getPool();
   if (pgPool) {
     try {
+      // Check if table exists before creating to avoid re-seeding bug
+      const tableCheck = await pgPool.query(`
+        SELECT EXISTS (
+          SELECT FROM information_schema.tables 
+          WHERE table_schema = 'public' 
+          AND table_name = 'budget_items'
+        )
+      `);
+      const tableExists = tableCheck.rows[0].exists;
+
       await pgPool.query(`
         CREATE TABLE IF NOT EXISTS budget_items (
           id VARCHAR(50) PRIMARY KEY,
           category VARCHAR(100) NOT NULL,
           item VARCHAR(100) NOT NULL,
           assigned INT NOT NULL,
-          paid INT NOT NULL
+          paid INT NOT NULL,
+          is_fixed BOOLEAN DEFAULT false
         );
       `);
 
@@ -87,27 +101,21 @@ export const initDb = async () => {
           type VARCHAR(50) NOT NULL,
           payment_method VARCHAR(50) NOT NULL,
           category VARCHAR(100) NOT NULL,
-          amount INT NOT NULL
+          amount INT NOT NULL,
+          is_fixed BOOLEAN DEFAULT false
         );
       `);
 
-      // Seed if empty
-      const budgetRes = await pgPool.query("SELECT COUNT(*) FROM budget_items");
-      if (parseInt(budgetRes.rows[0].count) === 0) {
+      // Ensure columns exist on older tables
+      await pgPool.query("ALTER TABLE budget_items ADD COLUMN IF NOT EXISTS is_fixed BOOLEAN DEFAULT false");
+      await pgPool.query("ALTER TABLE transactions ADD COLUMN IF NOT EXISTS is_fixed BOOLEAN DEFAULT false");
+
+      // Seed ONLY if table budget_items did not exist before (first deployment)
+      if (!tableExists) {
         for (const item of initialBudgetItems) {
           await pgPool.query(
-            "INSERT INTO budget_items (id, category, item, assigned, paid) VALUES ($1, $2, $3, $4, $5)",
-            [item.id, item.category, item.item, item.assigned, item.paid]
-          );
-        }
-      }
-
-      const txRes = await pgPool.query("SELECT COUNT(*) FROM transactions");
-      if (parseInt(txRes.rows[0].count) === 0) {
-        for (const tx of initialTransactions) {
-          await pgPool.query(
-            "INSERT INTO transactions (id, date, description, type, payment_method, category, amount) VALUES ($1, $2, $3, $4, $5, $6, $7)",
-            [tx.id, tx.date, tx.description, tx.type, tx.paymentMethod, tx.category, tx.amount]
+            "INSERT INTO budget_items (id, category, item, assigned, paid, is_fixed) VALUES ($1, $2, $3, $4, $5, $6)",
+            [item.id, item.category, item.item, item.assigned, item.paid, item.isFixed]
           );
         }
       }
@@ -156,7 +164,7 @@ export const getTransactions = async (): Promise<Transaction[]> => {
   const pgPool = getPool();
   if (pgPool) {
     const res = await pgPool.query(
-      'SELECT id, date, description, type, payment_method as "paymentMethod", category, amount FROM transactions ORDER BY date DESC, id DESC'
+      'SELECT id, date, description, type, payment_method as "paymentMethod", category, amount, is_fixed as "isFixed" FROM transactions ORDER BY date DESC, id DESC'
     );
     return res.rows;
   } else {
@@ -168,7 +176,7 @@ export const getBudgetItems = async (): Promise<BudgetItem[]> => {
   const pgPool = getPool();
   if (pgPool) {
     const res = await pgPool.query(
-      "SELECT id, category, item, assigned, paid FROM budget_items ORDER BY id ASC"
+      'SELECT id, category, item, assigned, paid, is_fixed as "isFixed" FROM budget_items ORDER BY id ASC'
     );
     return res.rows;
   } else {
@@ -181,8 +189,8 @@ export const addTransaction = async (tx: Transaction): Promise<void> => {
   if (pgPool) {
     // Insert transaction
     await pgPool.query(
-      "INSERT INTO transactions (id, date, description, type, payment_method, category, amount) VALUES ($1, $2, $3, $4, $5, $6, $7)",
-      [tx.id, tx.date, tx.description, tx.type, tx.paymentMethod, tx.category, tx.amount]
+      "INSERT INTO transactions (id, date, description, type, payment_method, category, amount, is_fixed) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+      [tx.id, tx.date, tx.description, tx.type, tx.paymentMethod, tx.category, tx.amount, tx.isFixed]
     );
 
     // Update paid amount in budget items if it's an expense
@@ -203,8 +211,8 @@ export const addTransaction = async (tx: Transaction): Promise<void> => {
         );
       } else {
         await pgPool.query(
-          "INSERT INTO budget_items (id, category, item, assigned, paid) VALUES ($1, $2, $3, $4, $5)",
-          [`b-${Date.now()}`, tx.category, tx.category, tx.amount, tx.amount]
+          "INSERT INTO budget_items (id, category, item, assigned, paid, is_fixed) VALUES ($1, $2, $3, $4, $5, $6)",
+          [`b-${Date.now()}`, tx.category, tx.category, tx.amount, tx.amount, tx.isFixed]
         );
       }
     }
@@ -233,7 +241,8 @@ export const addTransaction = async (tx: Transaction): Promise<void> => {
           category: tx.category,
           item: tx.category,
           assigned: tx.amount,
-          paid: tx.amount
+          paid: tx.amount,
+          isFixed: tx.isFixed
         });
       }
     }
@@ -285,21 +294,51 @@ export const deleteTransaction = async (id: string): Promise<void> => {
   }
 };
 
-export const updateBudgetItem = async (id: string, assigned: number, paid: number): Promise<void> => {
+export const updateBudgetItem = async (
+  id: string, 
+  assigned: number, 
+  paid: number, 
+  isFixed: boolean,
+  category?: string,
+  item?: string
+): Promise<void> => {
   const pgPool = getPool();
   if (pgPool) {
-    await pgPool.query(
-      "UPDATE budget_items SET assigned = $1, paid = $2 WHERE id = $3",
-      [assigned, paid, id]
-    );
+    const checkRes = await pgPool.query("SELECT COUNT(*) FROM budget_items WHERE id = $1", [id]);
+    const exists = parseInt(checkRes.rows[0].count) > 0;
+    if (exists) {
+      await pgPool.query(
+        "UPDATE budget_items SET assigned = $1, paid = $2, is_fixed = $3 WHERE id = $4",
+        [assigned, paid, isFixed, id]
+      );
+    } else {
+      const finalCategory = category || "Otros";
+      const finalItem = item || finalCategory;
+      await pgPool.query(
+        "INSERT INTO budget_items (id, category, item, assigned, paid, is_fixed) VALUES ($1, $2, $3, $4, $5, $6)",
+        [id, finalCategory, finalItem, assigned, paid, isFixed]
+      );
+    }
   } else {
     const data = readJson();
-    data.budgetItems = data.budgetItems.map((item: BudgetItem) => {
-      if (item.id === id) {
-        return { ...item, assigned, paid };
+    let found = false;
+    data.budgetItems = data.budgetItems.map((itemVal: BudgetItem) => {
+      if (itemVal.id === id) {
+        found = true;
+        return { ...itemVal, assigned, paid, isFixed };
       }
-      return item;
+      return itemVal;
     });
+    if (!found) {
+      data.budgetItems.push({
+        id,
+        category: category || "Otros",
+        item: item || category || "Otros",
+        assigned,
+        paid,
+        isFixed
+      });
+    }
     writeJson(data);
   }
 };
@@ -318,34 +357,28 @@ export const deleteBudgetItem = async (id: string): Promise<void> => {
 export const resetDb = async (): Promise<void> => {
   const pgPool = getPool();
   const defaultEmptyBudgetItems = [
-    "Vivienda",
-    "Claro hogar",
-    "Datos movistar",
-    "Gym",
-    "Transporte",
-    "Aseo personal",
-    "Netflix",
-    "Google",
-    "Seguro de vida",
-    "Salidas",
-    "Ahorro",
-    "Ahorro 1",
-    "CREDITO"
-  ].map((cat, i) => ({
-    id: `b${i + 1}`,
-    category: cat,
-    item: cat,
-    assigned: 0,
-    paid: 0
-  }));
+    { id: "b1", category: "Vivienda", item: "Vivienda", assigned: 0, paid: 0, isFixed: true },
+    { id: "b2", category: "Claro hogar", item: "Claro hogar", assigned: 0, paid: 0, isFixed: true },
+    { id: "b3", category: "Datos movistar", item: "Datos movistar", assigned: 0, paid: 0, isFixed: true },
+    { id: "b4", category: "Gym", item: "Gym", assigned: 0, paid: 0, isFixed: true },
+    { id: "b5", category: "Transporte", item: "Transporte", assigned: 0, paid: 0, isFixed: false },
+    { id: "b6", category: "Aseo personal", item: "Aseo personal", assigned: 0, paid: 0, isFixed: false },
+    { id: "b7", category: "Netflix", item: "Netflix", assigned: 0, paid: 0, isFixed: true },
+    { id: "b8", category: "Google", item: "Google", assigned: 0, paid: 0, isFixed: true },
+    { id: "b9", category: "Seguro de vida", item: "Seguro de vida", assigned: 0, paid: 0, isFixed: true },
+    { id: "b10", category: "Salidas", item: "Salidas", assigned: 0, paid: 0, isFixed: false },
+    { id: "b11", category: "Ahorro", item: "Ahorro", assigned: 0, paid: 0, isFixed: false },
+    { id: "b12", category: "Ahorro 1", item: "Ahorro 1", assigned: 0, paid: 0, isFixed: false },
+    { id: "b13", category: "CREDITO", item: "CREDITO", assigned: 0, paid: 0, isFixed: true }
+  ];
 
   if (pgPool) {
     await pgPool.query("TRUNCATE transactions");
     await pgPool.query("TRUNCATE budget_items");
     for (const item of defaultEmptyBudgetItems) {
       await pgPool.query(
-        "INSERT INTO budget_items (id, category, item, assigned, paid) VALUES ($1, $2, $3, $4, $5)",
-        [item.id, item.category, item.item, item.assigned, item.paid]
+        "INSERT INTO budget_items (id, category, item, assigned, paid, is_fixed) VALUES ($1, $2, $3, $4, $5, $6)",
+        [item.id, item.category, item.item, item.assigned, item.paid, item.isFixed]
       );
     }
   } else {
@@ -355,4 +388,3 @@ export const resetDb = async (): Promise<void> => {
     });
   }
 };
-

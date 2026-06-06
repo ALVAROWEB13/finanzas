@@ -40,6 +40,7 @@ interface BudgetItem {
   item: string;
   assigned: number;
   paid: number;
+  isFixed: boolean;
 }
 
 interface Transaction {
@@ -50,24 +51,10 @@ interface Transaction {
   paymentMethod: PaymentMethod;
   category: Category;
   amount: number;
+  isFixed: boolean;
 }
 
-// --- CONSTANTS ---
-const DEFAULT_CATEGORIES: string[] = [
-  "Vivienda",
-  "Claro hogar",
-  "Datos movistar",
-  "Gym",
-  "Transporte",
-  "Aseo personal",
-  "Netflix",
-  "Google",
-  "Seguro de vida",
-  "Salidas",
-  "Ahorro",
-  "Ahorro 1",
-  "CREDITO"
-];
+const DEFAULT_CATEGORIES: string[] = [];
 
 const getCategoryColor = (cat: string) => {
   const hash = cat.split("").reduce((acc, char) => char.charCodeAt(0) + acc, 0);
@@ -109,43 +96,24 @@ const getCategoryIcon = (cat: string) => {
 
 export default function TobiramaFinancialOS() {
   // --- AUTHENTICATION STATE ---
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState(() => {
+    if (typeof window !== "undefined") {
+      return localStorage.getItem("tobirama_auth") === "true";
+    }
+    return false;
+  });
   const [passwordInput, setPasswordInput] = useState("");
   const [loginError, setLoginError] = useState(false);
 
   // --- REAL MOCK INITIAL STATE ---
   const INITIAL_INCOME = 5976687; // Base Global Income ($5.976.687 COP)
 
-  const [budgetItems, setBudgetItems] = useState<BudgetItem[]>([
-    { id: "b1", category: "Vivienda", item: "Vivienda", assigned: 800000, paid: 550000 },
-    { id: "b2", category: "Claro hogar", item: "Claro hogar", assigned: 0, paid: 87865 },
-    { id: "b3", category: "Datos movistar", item: "Datos movistar", assigned: 55000, paid: 0 },
-    { id: "b4", category: "Gym", item: "Gym", assigned: 79900, paid: 54900 },
-    { id: "b5", category: "Transporte", item: "Transporte", assigned: 0, paid: 270625 },
-    { id: "b6", category: "Aseo personal", item: "Aseo personal", assigned: 200000, paid: 374100 },
-    { id: "b7", category: "Netflix", item: "Netflix", assigned: 26000, paid: 38900 },
-    { id: "b8", category: "Google", item: "Google", assigned: 11000, paid: 39900 },
-    { id: "b9", category: "Seguro de vida", item: "Seguro de vida", assigned: 0, paid: 19500 },
-    { id: "b10", category: "Salidas", item: "Salidas", assigned: 500000, paid: 419249 },
-    { id: "b11", category: "Ahorro", item: "Ahorro", assigned: 500000, paid: 0 },
-    { id: "b12", category: "Ahorro 1", item: "Ahorro 1", assigned: 200000, paid: 120000 },
-    { id: "b13", category: "CREDITO", item: "CREDITO", assigned: 250000, paid: 163842 }
-  ]);
+  const [budgetItems, setBudgetItems] = useState<BudgetItem[]>([]);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
 
-  const [transactions, setTransactions] = useState<Transaction[]>([
-    { id: "t1", date: "2026-06-01", description: "Ingreso Nómina Base", type: "Ingreso", paymentMethod: "Débito", category: "Ingresos", amount: 5976687 },
-    { id: "t2", date: "2026-06-02", description: "Abono Vivienda", type: "Gasto Extra", paymentMethod: "Débito", category: "Vivienda", amount: 550000 },
-    { id: "t3", date: "2026-06-02", description: "Pago Claro hogar", type: "Gasto Extra", paymentMethod: "Débito", category: "Claro hogar", amount: 87865 },
-    { id: "t4", date: "2026-06-03", description: "Mensualidad Gym", type: "Gasto Extra", paymentMethod: "Débito", category: "Gym", amount: 54900 },
-    { id: "t5", date: "2026-06-03", description: "Transportes varios", type: "Gasto Extra", paymentMethod: "Efectivo", category: "Transporte", amount: 270625 },
-    { id: "t6", date: "2026-06-04", description: "Mercado y Aseo personal", type: "Gasto Extra", paymentMethod: "Débito", category: "Aseo personal", amount: 374100 },
-    { id: "t7", date: "2026-06-04", description: "Suscripción Netflix", type: "Gasto Extra", paymentMethod: "TC", category: "Netflix", amount: 38900 },
-    { id: "t8", date: "2026-06-05", description: "Servicios en la nube Google", type: "Gasto Extra", paymentMethod: "TC", category: "Google", amount: 39900 },
-    { id: "t9", date: "2026-06-05", description: "Seguro de vida mensual", type: "Gasto Extra", paymentMethod: "Débito", category: "Seguro de vida", amount: 19500 },
-    { id: "t10", date: "2026-06-05", description: "Salida fin de semana", type: "Gasto Extra", paymentMethod: "Efectivo", category: "Salidas", amount: 419249 },
-    { id: "t11", date: "2026-06-05", description: "Ahorro Nu / Lulo (Abono 1)", type: "Movimiento a Reserva", paymentMethod: "Débito", category: "Ahorro 1", amount: 120000 },
-    { id: "t12", date: "2026-06-06", description: "Abono Crédito Bancario", type: "Gasto Extra", paymentMethod: "Débito", category: "CREDITO", amount: 163842 }
-  ]);
+  // Custom categories creation state
+  const [newCategoryName, setNewCategoryName] = useState("");
+  const [newCategoryIsFixed, setNewCategoryIsFixed] = useState(false);
 
   // --- UI STATE ---
   const [activeView, setActiveView] = useState<"dashboard" | "tracker" | "audit">("dashboard");
@@ -153,6 +121,7 @@ export default function TobiramaFinancialOS() {
   const [editingItem, setEditingItem] = useState<BudgetItem | null>(null);
   const [editPaidValue, setEditPaidValue] = useState("");
   const [editAssignedValue, setEditAssignedValue] = useState("");
+  const [editIsFixed, setEditIsFixed] = useState(false);
 
   // --- QUICK REGISTRATION FORM STATE (Optimized to match screen 2) ---
   const [inputMode, setInputMode] = useState<"keypad" | "voice" | "invoice">("keypad");
@@ -162,6 +131,13 @@ export default function TobiramaFinancialOS() {
   const [quickMethod, setQuickMethod] = useState<PaymentMethod>("Débito");
   const [quickType, setQuickType] = useState<TransactionType>("Gasto Extra");
   const [quickDescription, setQuickDescription] = useState("");
+  const [quickDate, setQuickDate] = useState(() => new Date().toISOString().split("T")[0]);
+  const [quickIsFixed, setQuickIsFixed] = useState(false);
+  const [selectedMonth, setSelectedMonth] = useState(() => {
+    const now = new Date();
+    const mm = String(now.getMonth() + 1).padStart(2, '0');
+    return `${now.getFullYear()}-${mm}`;
+  });
   const [quickSuccessMsg, setQuickSuccessMsg] = useState(false);
 
   // Voice States
@@ -216,6 +192,26 @@ export default function TobiramaFinancialOS() {
     return () => clearInterval(interval);
   }, []);
 
+  // Default quickCategory to the first available category or 'Otra...' if empty
+  useEffect(() => {
+    if (budgetItems.length > 0) {
+      if (!quickCategory || quickCategory === "Otra..." ? false : !budgetItems.some((item) => item.category === quickCategory)) {
+        setQuickCategory(budgetItems[0].category as any);
+      }
+    } else {
+      setQuickCategory("Otra..." as any);
+    }
+  }, [budgetItems, quickCategory]);
+
+  // Watch category selection to auto-classify fixed vs variable
+  useEffect(() => {
+    const matched = budgetItems.find((item) => item.category === quickCategory);
+    if (matched) {
+      setQuickIsFixed(matched.isFixed);
+    } else {
+      setQuickIsFixed(false);
+    }
+  }, [quickCategory, budgetItems]);
 
   // --- COMPUTE CATEGORIES LIST ---
   const CATEGORIES = useMemo(() => {
@@ -233,26 +229,65 @@ export default function TobiramaFinancialOS() {
     return [...CATEGORIES, "Otra..."];
   }, [CATEGORIES]);
 
+  // --- DYNAMIC MONTHLY BUDGETITEMS COMPUTATION ---
+  const monthlyBudgetItems = useMemo(() => {
+    return budgetItems.map((item) => {
+      // Compute dynamically spent in selectedMonth for this category
+      const spentInMonth = transactions
+        .filter(
+          (t) =>
+            t.category === item.category &&
+            t.date.startsWith(selectedMonth) &&
+            (t.type === "Gasto Extra" || t.type === "Movimiento a Reserva")
+        )
+        .reduce((sum, t) => sum + t.amount, 0);
+
+      return {
+        ...item,
+        paid: spentInMonth,
+      };
+    });
+  }, [budgetItems, transactions, selectedMonth]);
+
   // --- REAL-TIME ANALYSIS COMPUTATIONS ---
   const flowMetrics = useMemo(() => {
-    const totalIncomes = transactions
+    const monthlyTxs = transactions.filter((t) => t.date.startsWith(selectedMonth));
+
+    const totalIncomes = monthlyTxs
       .filter((t) => t.type === "Ingreso")
       .reduce((sum, t) => sum + t.amount, 0);
 
-    const totalExpenses = transactions
+    const totalExpenses = monthlyTxs
       .filter((t) => t.type === "Gasto Extra")
       .reduce((sum, t) => sum + t.amount, 0);
 
-    const totalReserves = transactions
+    const totalReserves = monthlyTxs
       .filter((t) => t.type === "Movimiento a Reserva")
       .reduce((sum, t) => sum + t.amount, 0);
 
     const spendRatio = totalIncomes > 0 ? (totalExpenses / totalIncomes) * 100 : 0;
     const savingsRatio = totalIncomes > 0 ? (totalReserves / totalIncomes) * 100 : 0;
+
+    // Fixed vs Variable breakdown
+    const totalFixedIncomes = monthlyTxs
+      .filter((t) => t.type === "Ingreso" && t.isFixed)
+      .reduce((sum, t) => sum + t.amount, 0);
+
+    const totalVariableIncomes = monthlyTxs
+      .filter((t) => t.type === "Ingreso" && !t.isFixed)
+      .reduce((sum, t) => sum + t.amount, 0);
+
+    const totalFixedExpenses = monthlyTxs
+      .filter((t) => t.type === "Gasto Extra" && t.isFixed)
+      .reduce((sum, t) => sum + t.amount, 0);
+
+    const totalVariableExpenses = monthlyTxs
+      .filter((t) => (t.type === "Gasto Extra" || t.type === "Movimiento a Reserva") && !t.isFixed)
+      .reduce((sum, t) => sum + t.amount, 0);
     
     // Group transactions by category to find top spend category
     const categorySpent: { [key: string]: number } = {};
-    transactions.forEach(t => {
+    monthlyTxs.forEach(t => {
       if (t.type === "Gasto Extra" || t.type === "Movimiento a Reserva") {
         categorySpent[t.category] = (categorySpent[t.category] || 0) + t.amount;
       }
@@ -273,11 +308,15 @@ export default function TobiramaFinancialOS() {
       totalReserves,
       spendRatio,
       savingsRatio,
+      totalFixedIncomes,
+      totalVariableIncomes,
+      totalFixedExpenses,
+      totalVariableExpenses,
       topCategory,
       topCategoryPercent,
       sortedCats
     };
-  }, [transactions]);
+  }, [transactions, selectedMonth]);
 
   // --- REACTIVE COMPUTATIONS ---
   // Real Liquidez de Bolsillo (Termómetro de Liquidez)
@@ -295,15 +334,16 @@ export default function TobiramaFinancialOS() {
 
   // Real Patrimonio Neto: Caja Libre + Ahorros Nu/Lulo
   const netWorthTotal = useMemo(() => {
-    const savingsItem = budgetItems.find((item) => item.category === "Ahorro / Reserva");
-    const savingsAmount = savingsItem ? savingsItem.paid : 0;
+    const savingsAmount = transactions
+      .filter((t) => t.type === "Movimiento a Reserva" || t.category.toLowerCase().includes("ahorro"))
+      .reduce((sum, t) => sum + t.amount, 0);
     return pocketLiquidity + savingsAmount;
-  }, [pocketLiquidity, budgetItems]);
+  }, [pocketLiquidity, transactions]);
 
   // Deuda Erradicada
   const debtMetrics = useMemo(() => {
     const targetCategories: Category[] = ["Deudas de Consumo", "Tarjetas de Crédito"];
-    const debtItems = budgetItems.filter((item) => targetCategories.includes(item.category));
+    const debtItems = monthlyBudgetItems.filter((item) => targetCategories.includes(item.category));
     const totalAssigned = debtItems.reduce((sum, item) => sum + item.assigned, 0);
     const totalPaid = debtItems.reduce((sum, item) => sum + item.paid, 0);
 
@@ -314,16 +354,16 @@ export default function TobiramaFinancialOS() {
       totalPaid,
       totalPending: Math.max(0, totalAssigned - totalPaid),
     };
-  }, [budgetItems]);
+  }, [monthlyBudgetItems]);
 
   // Burn Rate mensual (gasto acumulado real de compromisos pagados)
   const monthlyBurn = useMemo(() => {
-    return budgetItems.reduce((sum, item) => sum + item.paid, 0);
-  }, [budgetItems]);
+    return monthlyBudgetItems.reduce((sum, item) => sum + item.paid, 0);
+  }, [monthlyBudgetItems]);
 
   // Output Distribution Matrix
   const distributionMatrix = useMemo(() => {
-    return budgetItems.map((item) => {
+    return monthlyBudgetItems.map((item) => {
       const percentage = item.assigned > 0 ? (item.paid / item.assigned) * 100 : 0;
       return {
         ...item,
@@ -331,16 +371,18 @@ export default function TobiramaFinancialOS() {
         pending: Math.max(0, item.assigned - item.paid),
       };
     });
-  }, [budgetItems]);
+  }, [monthlyBudgetItems]);
 
   // --- DYNAMIC ASSET TRAJECTORY GENERATOR (SVG-based Wave Chart) ---
   const { chartPathData, trajectoryPoints } = useMemo(() => {
-    const sortedTxs = [...transactions].sort((a, b) => a.date.localeCompare(b.date));
+    const monthlyTxs = transactions
+      .filter((t) => t.date.startsWith(selectedMonth))
+      .sort((a, b) => a.date.localeCompare(b.date));
     
     let currentBalance = 0;
     const points: { date: string; balance: number }[] = [];
     
-    sortedTxs.forEach((tx) => {
+    monthlyTxs.forEach((tx) => {
       if (tx.type === "Ingreso") {
         currentBalance += tx.amount;
       } else {
@@ -351,8 +393,8 @@ export default function TobiramaFinancialOS() {
 
     if (points.length === 0) return { chartPathData: { linePath: "", areaPath: "", points: [] }, trajectoryPoints: [] };
     
-    const maxVal = Math.max(...points.map(p => p.balance), INITIAL_INCOME);
-    const minVal = 0;
+    const maxVal = Math.max(...points.map(p => p.balance), 100000);
+    const minVal = Math.min(...points.map(p => p.balance), 0);
     const valRange = maxVal - minVal || 1;
     
     const width = 500;
@@ -380,12 +422,14 @@ export default function TobiramaFinancialOS() {
       chartPathData: { linePath, areaPath, points: svgPoints }, 
       trajectoryPoints: points 
     };
-  }, [transactions, INITIAL_INCOME]);
+  }, [transactions, selectedMonth]);
 
-  // --- HANDLERS ---
   const handleLoginSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (passwordInput === "tobirama2026" || passwordInput === "1208") {
+      if (typeof window !== "undefined") {
+        localStorage.setItem("tobirama_auth", "true");
+      }
       setIsAuthenticated(true);
       setLoginError(false);
       const now = new Date().toLocaleTimeString();
@@ -402,6 +446,7 @@ export default function TobiramaFinancialOS() {
     setEditingItem(item);
     setEditPaidValue(item.paid.toString());
     setEditAssignedValue(item.assigned.toString());
+    setEditIsFixed(item.isFixed ?? false);
   };
 
   const saveBudgetEdit = async () => {
@@ -413,7 +458,7 @@ export default function TobiramaFinancialOS() {
     // Optimistically update budget items locally
     setBudgetItems((prev) =>
       prev.map((item) =>
-        item.id === editingItem.id ? { ...item, paid: newPaid, assigned: newAssigned } : item
+        item.id === editingItem.id ? { ...item, paid: newPaid, assigned: newAssigned, isFixed: editIsFixed } : item
       )
     );
 
@@ -429,6 +474,7 @@ export default function TobiramaFinancialOS() {
         paymentMethod: "Débito",
         category: editingItem.category,
         amount: Math.abs(diff),
+        isFixed: editIsFixed,
       };
       setTransactions((prev) => [adjustmentTx!, ...prev]);
 
@@ -447,7 +493,8 @@ export default function TobiramaFinancialOS() {
         body: JSON.stringify({
           id: editingItem.id,
           assigned: newAssigned,
-          paid: newPaid
+          paid: newPaid,
+          isFixed: editIsFixed
         }),
       });
 
@@ -471,6 +518,50 @@ export default function TobiramaFinancialOS() {
     setEditingItem(null);
   };
 
+  const handleAddCategorySubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const catName = newCategoryName.trim();
+    if (!catName) return;
+
+    if (budgetItems.some((item) => item.category.toLowerCase() === catName.toLowerCase())) {
+      alert("Esta categoría ya existe.");
+      return;
+    }
+
+    const newItem: BudgetItem = {
+      id: `b-${Date.now()}`,
+      category: catName,
+      item: catName,
+      assigned: 0,
+      paid: 0,
+      isFixed: newCategoryIsFixed,
+    };
+
+    setBudgetItems((prev) => [...prev, newItem]);
+    setNewCategoryName("");
+
+    try {
+      const res = await fetch("/api/budget", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: newItem.id,
+          assigned: 0,
+          paid: 0,
+          isFixed: newItem.isFixed,
+          category: newItem.category,
+          item: newItem.item,
+        }),
+      });
+      if (!res.ok) {
+        throw new Error("Failed to create new budget category");
+      }
+      fetchFromServer();
+    } catch (err) {
+      console.error("Failed to add new budget item:", err);
+    }
+  };
+
   // Quick register transaction form submission (Vista C - Screen 2 style)
   const handleQuickRegister = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -483,12 +574,13 @@ export default function TobiramaFinancialOS() {
     // Add transaction to central state
     const newTx: Transaction = {
       id: `t-${Date.now()}`,
-      date: new Date().toISOString().split("T")[0],
+      date: quickDate || new Date().toISOString().split("T")[0],
       description: desc,
       type: quickType,
       paymentMethod: quickMethod,
       category: finalCategory,
       amount: amountVal,
+      isFixed: quickIsFixed,
     };
 
     setTransactions((prev) => [newTx, ...prev]);
@@ -515,6 +607,7 @@ export default function TobiramaFinancialOS() {
             item: finalCategory,
             assigned: amountVal,
             paid: amountVal,
+            isFixed: quickIsFixed,
           });
         }
         return updated;
@@ -839,19 +932,19 @@ export default function TobiramaFinancialOS() {
       newLogs.push("  /reset   - Restablece el OS financiero a su estado de fábrica.");
     } else if (cmd === "/reset") {
       setBudgetItems([
-        { id: "b1", category: "Vivienda", item: "Cuota Tamarindo", assigned: 1427000, paid: 1427000 },
-        { id: "b2", category: "Deudas de Consumo", item: "ADDI / Crédito", assigned: 2029023, paid: 2029023 },
-        { id: "b3", category: "Tarjetas de Crédito", item: "Cupo Utilizado", assigned: 0, paid: 0 },
-        { id: "b4", category: "Gastos Fijos", item: "Apoyo Madre & Internet", assigned: 650000, paid: 650000 },
-        { id: "b5", category: "Ahorro / Reserva", item: "Fondo Nu / Lulo", assigned: 587029, paid: 587029 },
-        { id: "b6", category: "Estilo de Vida / Mercado", item: "Gastos Mensuales", assigned: 600000, paid: 0 },
+        { id: "b1", category: "Vivienda", item: "Cuota Tamarindo", assigned: 1427000, paid: 1427000, isFixed: true },
+        { id: "b2", category: "Deudas de Consumo", item: "ADDI / Crédito", assigned: 2029023, paid: 2029023, isFixed: true },
+        { id: "b3", category: "Tarjetas de Crédito", item: "Cupo Utilizado", assigned: 0, paid: 0, isFixed: true },
+        { id: "b4", category: "Gastos Fijos", item: "Apoyo Madre & Internet", assigned: 650000, paid: 650000, isFixed: true },
+        { id: "b5", category: "Ahorro / Reserva", item: "Fondo Nu / Lulo", assigned: 587029, paid: 587029, isFixed: false },
+        { id: "b6", category: "Estilo de Vida / Mercado", item: "Gastos Mensuales", assigned: 600000, paid: 0, isFixed: false },
       ]);
       setTransactions([
-        { id: "t1", date: "2026-06-01", description: "Ingreso Nómina Base", type: "Ingreso", paymentMethod: "Débito", category: "Gastos Fijos", amount: 5976687 },
-        { id: "t2", date: "2026-06-02", description: "Pago Cuota Tamarindo Jaramillo Mora", type: "Gasto Extra", paymentMethod: "Débito", category: "Vivienda", amount: 1427000 },
-        { id: "t3", date: "2026-06-02", description: "Liquidación Crédito ADDI", type: "Gasto Extra", paymentMethod: "Débito", category: "Deudas de Consumo", amount: 2029023 },
-        { id: "t4", date: "2026-06-03", description: "Fondo Nu / Lulo (Ahorro)", type: "Movimiento a Reserva", paymentMethod: "Débito", category: "Ahorro / Reserva", amount: 587029 },
-        { id: "t5", date: "2026-06-03", description: "Servicios e Internet & Apoyo Familiar", type: "Gasto Extra", paymentMethod: "Débito", category: "Gastos Fijos", amount: 650000 },
+        { id: "t1", date: "2026-06-01", description: "Ingreso Nómina Base", type: "Ingreso", paymentMethod: "Débito", category: "Gastos Fijos", amount: 5976687, isFixed: true },
+        { id: "t2", date: "2026-06-02", description: "Pago Cuota Tamarindo Jaramillo Mora", type: "Gasto Extra", paymentMethod: "Débito", category: "Vivienda", amount: 1427000, isFixed: true },
+        { id: "t3", date: "2026-06-02", description: "Liquidación Crédito ADDI", type: "Gasto Extra", paymentMethod: "Débito", category: "Deudas de Consumo", amount: 2029023, isFixed: true },
+        { id: "t4", date: "2026-06-03", description: "Fondo Nu / Lulo (Ahorro)", type: "Movimiento a Reserva", paymentMethod: "Débito", category: "Ahorro / Reserva", amount: 587029, isFixed: false },
+        { id: "t5", date: "2026-06-03", description: "Servicios e Internet & Apoyo Familiar", type: "Gasto Extra", paymentMethod: "Débito", category: "Gastos Fijos", amount: 650000, isFixed: true },
       ]);
       newLogs.push(`[${timeStr}] SYSTEM: Reinicio de base de datos completado.`);
     } else {
@@ -1121,6 +1214,44 @@ export default function TobiramaFinancialOS() {
           </div>
         </header>
 
+        {/* --- MONTH SELECTOR BAR --- */}
+        <div className="bg-[#050505] border-b border-white/[0.03] px-6 py-3 md:px-8 flex items-center justify-between gap-4">
+          <div className="flex items-center gap-2">
+            <span className="h-2 w-2 rounded-full bg-blue-500 animate-pulse" />
+            <span className="text-[10px] font-bold font-mono tracking-widest text-slate-500 uppercase">Periodo de Análisis</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => {
+                const [year, month] = selectedMonth.split("-").map(Number);
+                const prevDate = new Date(year, month - 2, 1);
+                setSelectedMonth(`${prevDate.getFullYear()}-${String(prevDate.getMonth() + 1).padStart(2, "0")}`);
+              }}
+              className="p-1.5 rounded-lg bg-[#090a0c] border border-white/[0.04] text-slate-400 hover:text-white text-[10px] font-bold cursor-pointer transition-colors"
+            >
+              ◀
+            </button>
+            <input
+              type="month"
+              value={selectedMonth}
+              onChange={(e) => {
+                if (e.target.value) setSelectedMonth(e.target.value);
+              }}
+              className="bg-[#090a0c] border border-white/[0.04] rounded-lg px-3 py-1.5 text-xs font-mono text-slate-200 focus:outline-none focus:border-white/[0.1] [color-scheme:dark]"
+            />
+            <button
+              onClick={() => {
+                const [year, month] = selectedMonth.split("-").map(Number);
+                const nextDate = new Date(year, month, 1);
+                setSelectedMonth(`${nextDate.getFullYear()}-${String(nextDate.getMonth() + 1).padStart(2, "0")}`);
+              }}
+              className="p-1.5 rounded-lg bg-[#090a0c] border border-white/[0.04] text-slate-400 hover:text-white text-[10px] font-bold cursor-pointer transition-colors"
+            >
+              ▶
+            </button>
+          </div>
+        </div>
+
         {/* --- VIEW ROUTING --- */}
         <main className="flex-1 p-6 md:p-8 max-w-7xl w-full mx-auto space-y-8 bg-black">
           <AnimatePresence mode="wait">
@@ -1138,7 +1269,7 @@ export default function TobiramaFinancialOS() {
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                   
                   {/* Card 1: Patrimonio Neto */}
-                  <div className="relative glass-panel rounded-2xl p-6 flex flex-col justify-between min-h-[160px] group transition-all hover:border-emerald-500/20 bg-[#0a0b0d]/50 border-white/[0.04]">
+                  <div className="relative glass-panel rounded-2xl p-6 flex flex-col justify-between min-h-[180px] group transition-all hover:border-emerald-500/20 bg-[#0a0b0d]/50 border-white/[0.04]">
                     <div className="flex justify-between items-start">
                       <div>
                         <span className="text-[10px] text-slate-500 uppercase tracking-widest font-mono font-semibold">PATRIMONIO NETO</span>
@@ -1150,17 +1281,20 @@ export default function TobiramaFinancialOS() {
                         <TrendingUp className="h-5 w-5 text-emerald-400" />
                       </div>
                     </div>
-                    <div className="flex items-center gap-2 mt-4 text-[10px] font-mono">
-                      <span className="text-emerald-400">+4.2%</span>
-                      <span className="text-slate-600">vs mes anterior</span>
-                      <svg className="h-6 w-20 ml-auto" viewBox="0 0 100 30" fill="none">
-                        <path d="M0,25 Q15,10 30,18 T60,5 T90,28 T100,10" stroke="#10b981" strokeWidth="2" fill="none"/>
-                      </svg>
+                    <div className="mt-4 pt-3 border-t border-white/[0.03] grid grid-cols-2 gap-4">
+                      <div>
+                        <div className="text-[8px] text-slate-500 font-mono uppercase">Ingresos Fijos</div>
+                        <div className="text-[11px] font-bold font-mono text-slate-200">{formatCOP(flowMetrics.totalFixedIncomes)}</div>
+                      </div>
+                      <div>
+                        <div className="text-[8px] text-slate-500 font-mono uppercase">Ingresos Variables</div>
+                        <div className="text-[11px] font-bold font-mono text-slate-400">{formatCOP(flowMetrics.totalVariableIncomes)}</div>
+                      </div>
                     </div>
                   </div>
 
                   {/* Card 2: Burnout Mensual */}
-                  <div className="relative glass-panel rounded-2xl p-6 flex flex-col justify-between min-h-[160px] group transition-all hover:border-red-500/20 bg-[#0a0b0d]/50 border-white/[0.04]">
+                  <div className="relative glass-panel rounded-2xl p-6 flex flex-col justify-between min-h-[180px] group transition-all hover:border-red-500/20 bg-[#0a0b0d]/50 border-white/[0.04]">
                     <div className="flex justify-between items-start">
                       <div>
                         <span className="text-[10px] text-slate-500 uppercase tracking-widest font-mono font-semibold">GASTO MENSUAL</span>
@@ -1172,13 +1306,24 @@ export default function TobiramaFinancialOS() {
                         GM
                       </div>
                     </div>
-                    <div className="mt-4">
-                      <div className="flex justify-between text-[9px] text-slate-600 mb-1 font-mono">
-                        <span>+12.5% umbral de alerta</span>
-                        <span>Ejecución actual</span>
+                    <div className="mt-4 pt-3 border-t border-white/[0.03] grid grid-cols-2 gap-4">
+                      <div>
+                        <div className="text-[8px] text-slate-500 font-mono uppercase">Gastos Fijos</div>
+                        <div className="text-[11px] font-bold font-mono text-slate-200">
+                          {formatCOP(flowMetrics.totalFixedExpenses)}
+                        </div>
+                        <div className="text-[8px] text-slate-650 font-mono">
+                          Prog: {formatCOP(monthlyBudgetItems.filter(i => i.isFixed).reduce((s, i) => s + i.assigned, 0))}
+                        </div>
                       </div>
-                      <div className="h-1.5 w-full bg-[#121316] rounded-full overflow-hidden">
-                        <div className="h-full bg-gradient-to-r from-red-500 to-rose-400" style={{ width: `${Math.min(100, (monthlyBurn / INITIAL_INCOME) * 100)}%` }} />
+                      <div>
+                        <div className="text-[8px] text-slate-500 font-mono uppercase">Gastos Variables</div>
+                        <div className="text-[11px] font-bold font-mono text-slate-200">
+                          {formatCOP(flowMetrics.totalVariableExpenses)}
+                        </div>
+                        <div className="text-[8px] text-slate-650 font-mono">
+                          Prog: {formatCOP(monthlyBudgetItems.filter(i => !i.isFixed).reduce((s, i) => s + i.assigned, 0))}
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -1908,6 +2053,50 @@ export default function TobiramaFinancialOS() {
                         </div>
                       </div>
 
+                      {/* Date & Classification row */}
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-1.5">
+                          <span className="text-[9px] text-slate-555 uppercase tracking-widest font-mono block font-semibold">Fecha</span>
+                          <input
+                            type="date"
+                            value={quickDate}
+                            onChange={(e) => setQuickDate(e.target.value)}
+                            className="w-full px-3 py-2 rounded-xl border border-white/[0.04] bg-[#090a0c]/60 text-xs font-mono text-slate-200 focus:border-white/[0.1] focus:bg-[#090a0c]/80 transition-all focus:outline-none [color-scheme:dark]"
+                          />
+                        </div>
+
+                        <div className="space-y-1.5">
+                          <span className="text-[9px] text-slate-555 uppercase tracking-widest font-mono block font-semibold">Clasificación</span>
+                          <div className="grid grid-cols-2 gap-1 p-0.5 bg-[#090a0c] rounded-xl border border-white/[0.02] h-[34px]">
+                            {[
+                              { value: true, label: "Fijo" },
+                              { value: false, label: "Variable" }
+                            ].map((opt) => {
+                              const isSel = quickIsFixed === opt.value;
+                              return (
+                                <button
+                                  key={opt.label}
+                                  type="button"
+                                  onClick={() => setQuickIsFixed(opt.value)}
+                                  className={`py-1 rounded-lg text-[9px] font-bold uppercase tracking-wider font-mono transition-all cursor-pointer relative ${
+                                    isSel ? "text-white" : "text-slate-655 hover:text-slate-400"
+                                  }`}
+                                >
+                                  {isSel && (
+                                    <motion.div
+                                      layoutId="quickIsFixedPill"
+                                      className="absolute inset-0 bg-white/[0.03] border border-white/[0.08] rounded-lg"
+                                      transition={{ type: "spring", stiffness: 380, damping: 30 }}
+                                    />
+                                  )}
+                                  <span className="relative z-10">{opt.label}</span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      </div>
+
                       {/* Large Glowing Confirm Button */}
                       <button
                         onClick={handleQuickRegister}
@@ -1946,14 +2135,14 @@ export default function TobiramaFinancialOS() {
                           <Activity className="h-5 w-5 text-slate-400" />
                           <h4 className="text-base font-bold text-white">Libro de Movimientos</h4>
                         </div>
-                        <span className="text-xs font-mono text-slate-500">
-                          {transactions.length} registros
+                        <span className="text-xs font-mono text-slate-550">
+                          {transactions.filter(t => t.date.startsWith(selectedMonth)).length} de {transactions.length} registros
                         </span>
                       </div>
 
                       <div className="flex-1 overflow-y-auto space-y-3 max-h-[620px] pr-2 scrollbar-thin">
                         <AnimatePresence initial={false}>
-                          {transactions.map((tx) => {
+                          {transactions.filter(t => t.date.startsWith(selectedMonth)).map((tx) => {
                             const isIncome = tx.type === "Ingreso";
                             const isReserve = tx.type === "Movimiento a Reserva";
 
@@ -2048,9 +2237,37 @@ export default function TobiramaFinancialOS() {
                 transition={{ duration: 0.3, ease: "easeInOut" }}
                 className="space-y-6"
               >
-                <div>
-                  <h3 className="text-2xl font-bold tracking-tight text-white">Matriz de Control Mensual</h3>
-                  <p className="text-sm text-slate-400">Data Grid de alta densidad informativa y auditoría presupuestaria.</p>
+                <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                  <div>
+                    <h3 className="text-2xl font-bold tracking-tight text-white">Matriz de Control Mensual</h3>
+                    <p className="text-sm text-slate-400 font-mono text-xs">Auditoría presupuestaria de gastos fijos y variables.</p>
+                  </div>
+                  
+                  {/* Form to add a new category */}
+                  <form onSubmit={handleAddCategorySubmit} className="flex flex-wrap items-center gap-2 bg-[#090a0c]/60 p-2.5 rounded-xl border border-white/[0.04]">
+                    <input
+                      type="text"
+                      placeholder="Nueva Categoría (Ej: Supermercado)"
+                      value={newCategoryName}
+                      onChange={(e) => setNewCategoryName(e.target.value)}
+                      className="px-3 py-1.5 rounded-lg border border-white/[0.04] bg-black text-xs font-mono text-slate-200 placeholder-slate-600 focus:outline-none focus:border-white/[0.1] w-48"
+                      required
+                    />
+                    <select
+                      value={newCategoryIsFixed ? "true" : "false"}
+                      onChange={(e) => setNewCategoryIsFixed(e.target.value === "true")}
+                      className="px-2 py-1.5 rounded-lg border border-white/[0.04] bg-black text-xs font-mono text-slate-200 focus:outline-none focus:border-white/[0.1] [color-scheme:dark]"
+                    >
+                      <option value="true">Gasto Fijo</option>
+                      <option value="false">Gasto Variable</option>
+                    </select>
+                    <button
+                      type="submit"
+                      className="px-3.5 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-black font-bold text-xs uppercase tracking-wide transition-all cursor-pointer"
+                    >
+                      + Agregar
+                    </button>
+                  </form>
                 </div>
 
                 <div className="glass-panel rounded-2xl overflow-hidden bg-[#0a0b0d]/50 border-white/[0.04]">
@@ -2078,9 +2295,18 @@ export default function TobiramaFinancialOS() {
                               className="hover:bg-white/[0.01] transition-colors"
                             >
                               <td className="px-6 py-4.5">
-                                <span className={`px-2 py-0.5 rounded text-[10px] font-mono border ${getCategoryColor(item.category)}`}>
-                                  {item.category}
-                                </span>
+                                <div className="flex items-center gap-2">
+                                  <span className={`px-2 py-0.5 rounded text-[10px] font-mono border ${getCategoryColor(item.category)}`}>
+                                    {item.category}
+                                  </span>
+                                  <span className={`px-1.5 py-0.25 rounded text-[8px] font-mono font-bold ${
+                                    item.isFixed 
+                                      ? "bg-purple-500/10 text-purple-400 border border-purple-500/20" 
+                                      : "bg-blue-500/10 text-blue-400 border border-blue-500/20"
+                                  }`}>
+                                    {item.isFixed ? "FIJO" : "VAR"}
+                                  </span>
+                                </div>
                               </td>
                               <td className="px-6 py-4.5 font-medium text-slate-200">
                                 {item.item}
@@ -2212,6 +2438,37 @@ export default function TobiramaFinancialOS() {
                       onChange={(e) => setEditPaidValue(e.target.value)}
                       className="w-full pl-8 pr-4 py-2.5 rounded-xl border border-white/[0.06] bg-black text-sm font-mono text-slate-200 focus:border-blue-500/50"
                     />
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-mono uppercase text-slate-550 mb-1">Clasificación</label>
+                  <div className="grid grid-cols-2 gap-1 p-0.5 bg-black rounded-xl border border-white/[0.06] h-[36px]">
+                    {[
+                      { value: true, label: "Gasto Fijo" },
+                      { value: false, label: "Gasto Variable" }
+                    ].map((opt) => {
+                      const isSel = editIsFixed === opt.value;
+                      return (
+                        <button
+                          key={opt.label}
+                          type="button"
+                          onClick={() => setEditIsFixed(opt.value)}
+                          className={`py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider font-mono transition-all cursor-pointer relative ${
+                            isSel ? "text-white" : "text-slate-650 hover:text-slate-400"
+                          }`}
+                        >
+                          {isSel && (
+                            <motion.div
+                              layoutId="editIsFixedPill"
+                              className="absolute inset-0 bg-white/[0.03] border border-white/[0.08] rounded-lg"
+                              transition={{ type: "spring", stiffness: 380, damping: 30 }}
+                            />
+                          )}
+                          <span className="relative z-10">{opt.label}</span>
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
               </div>
