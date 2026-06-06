@@ -25,7 +25,9 @@ import {
   Trash2,
   Mic,
   Upload,
-  Check
+  Check,
+  CheckCircle2,
+  Circle
 } from "lucide-react";
 
 // --- TYPES ---
@@ -717,6 +719,65 @@ export default function TobiramaFinancialOS() {
     }
   };
 
+  const handleTogglePaid = async (item: BudgetItem) => {
+    const isCurrentlyPaid = item.paid >= item.assigned && item.assigned > 0;
+    const newPaid = isCurrentlyPaid ? 0 : item.assigned;
+
+    // Optimistically update locally
+    setBudgetItems((prev) =>
+      prev.map((i) => (i.id === item.id ? { ...i, paid: newPaid } : i))
+    );
+
+    // Transaction adjustment
+    const diff = newPaid - item.paid;
+    let adjustmentTx: Transaction | null = null;
+    if (diff !== 0) {
+      adjustmentTx = {
+        id: `t-${Date.now()}`,
+        date: new Date().toISOString().split("T")[0],
+        description: diff > 0 ? `Pago rápido: ${item.item}` : `Ajuste débito: ${item.item}`,
+        type: diff > 0 ? "Gasto Extra" : "Ingreso",
+        paymentMethod: "Débito",
+        category: item.category,
+        amount: Math.abs(diff),
+        isFixed: item.isFixed,
+      };
+      setTransactions((prev) => [adjustmentTx!, ...prev]);
+
+      const timeStr = new Date().toLocaleTimeString();
+      setTerminalLogs((prev) => [
+        ...prev,
+        `[${timeStr}] PAGO RÁPIDO: Registro de ajuste por ${formatCOP(Math.abs(diff))} en '${item.category}'.`
+      ]);
+    }
+
+    try {
+      await fetch("/api/budget", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: item.id,
+          assigned: item.assigned,
+          paid: newPaid,
+          isFixed: item.isFixed,
+          category: item.category,
+          item: item.item
+        }),
+      });
+
+      if (adjustmentTx) {
+        await fetch("/api/transactions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(adjustmentTx),
+        });
+      }
+      fetchFromServer();
+    } catch (err) {
+      console.error("Failed to toggle paid state on server:", err);
+    }
+  };
+
   const handleResetDb = async () => {
     if (!confirm("⚠️ ADVERTENCIA MÁXIMA: ¿Estás seguro de restablecer por completo la base de datos? Esto eliminará permanentemente todas tus transacciones y pondrá todos los presupuestos en $0. Esta acción es irreversible.")) {
       return;
@@ -724,13 +785,7 @@ export default function TobiramaFinancialOS() {
 
     // Optimistic UI updates
     setTransactions([]);
-    setBudgetItems((prev) =>
-      prev.map((item) => ({
-        ...item,
-        assigned: 0,
-        paid: 0,
-      }))
-    );
+    setBudgetItems([]);
 
     try {
       const res = await fetch("/api/reset", {
@@ -2321,13 +2376,28 @@ export default function TobiramaFinancialOS() {
                                 {formatCOP(outstanding)}
                               </td>
                               <td className="px-6 py-4.5 text-center">
-                                <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold ${
-                                  isPaid 
-                                    ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" 
-                                    : "bg-yellow-500/10 text-yellow-400 border border-yellow-500/20"
-                                }`}>
-                                  {isPaid ? "PAGADO" : "PENDIENTE"}
-                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => handleTogglePaid(item)}
+                                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold border transition-all cursor-pointer ${
+                                    isPaid 
+                                      ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20 shadow-[0_0_10px_rgba(16,185,129,0.02)]" 
+                                      : "bg-yellow-500/5 text-yellow-400/80 border-yellow-500/20 hover:border-yellow-500/40"
+                                  }`}
+                                  title={isPaid ? "Marcar como pendiente" : "Marcar como pagado (igualar a asignado)"}
+                                >
+                                  {isPaid ? (
+                                    <>
+                                      <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />
+                                      <span>PAGADO</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Circle className="h-3.5 w-3.5 text-yellow-500/40" />
+                                      <span>PENDIENTE</span>
+                                    </>
+                                  )}
+                                </button>
                               </td>
                               <td className="px-6 py-4.5 text-center space-x-2">
                                 <button

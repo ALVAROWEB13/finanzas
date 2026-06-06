@@ -27,21 +27,7 @@ export interface BudgetItem {
 }
 
 // Initial seed data with correct Fixed vs Variable classification!
-const initialBudgetItems: BudgetItem[] = [
-  { id: "b1", category: "Vivienda", item: "Vivienda", assigned: 0, paid: 0, isFixed: true },
-  { id: "b2", category: "Claro hogar", item: "Claro hogar", assigned: 0, paid: 0, isFixed: true },
-  { id: "b3", category: "Datos movistar", item: "Datos movistar", assigned: 0, paid: 0, isFixed: true },
-  { id: "b4", category: "Gym", item: "Gym", assigned: 0, paid: 0, isFixed: true },
-  { id: "b5", category: "Transporte", item: "Transporte", assigned: 0, paid: 0, isFixed: false },
-  { id: "b6", category: "Aseo personal", item: "Aseo personal", assigned: 0, paid: 0, isFixed: false },
-  { id: "b7", category: "Netflix", item: "Netflix", assigned: 0, paid: 0, isFixed: true },
-  { id: "b8", category: "Google", item: "Google", assigned: 0, paid: 0, isFixed: true },
-  { id: "b9", category: "Seguro de vida", item: "Seguro de vida", assigned: 0, paid: 0, isFixed: true },
-  { id: "b10", category: "Salidas", item: "Salidas", assigned: 0, paid: 0, isFixed: false },
-  { id: "b11", category: "Ahorro", item: "Ahorro", assigned: 0, paid: 0, isFixed: false },
-  { id: "b12", category: "Ahorro 1", item: "Ahorro 1", assigned: 0, paid: 0, isFixed: false },
-  { id: "b13", category: "CREDITO", item: "CREDITO", assigned: 0, paid: 0, isFixed: true }
-];
+const initialBudgetItems: BudgetItem[] = [];
 
 const initialTransactions: Transaction[] = [];
 
@@ -356,34 +342,12 @@ export const deleteBudgetItem = async (id: string): Promise<void> => {
 
 export const resetDb = async (): Promise<void> => {
   const pgPool = getPool();
-  const defaultEmptyBudgetItems = [
-    { id: "b1", category: "Vivienda", item: "Vivienda", assigned: 0, paid: 0, isFixed: true },
-    { id: "b2", category: "Claro hogar", item: "Claro hogar", assigned: 0, paid: 0, isFixed: true },
-    { id: "b3", category: "Datos movistar", item: "Datos movistar", assigned: 0, paid: 0, isFixed: true },
-    { id: "b4", category: "Gym", item: "Gym", assigned: 0, paid: 0, isFixed: true },
-    { id: "b5", category: "Transporte", item: "Transporte", assigned: 0, paid: 0, isFixed: false },
-    { id: "b6", category: "Aseo personal", item: "Aseo personal", assigned: 0, paid: 0, isFixed: false },
-    { id: "b7", category: "Netflix", item: "Netflix", assigned: 0, paid: 0, isFixed: true },
-    { id: "b8", category: "Google", item: "Google", assigned: 0, paid: 0, isFixed: true },
-    { id: "b9", category: "Seguro de vida", item: "Seguro de vida", assigned: 0, paid: 0, isFixed: true },
-    { id: "b10", category: "Salidas", item: "Salidas", assigned: 0, paid: 0, isFixed: false },
-    { id: "b11", category: "Ahorro", item: "Ahorro", assigned: 0, paid: 0, isFixed: false },
-    { id: "b12", category: "Ahorro 1", item: "Ahorro 1", assigned: 0, paid: 0, isFixed: false },
-    { id: "b13", category: "CREDITO", item: "CREDITO", assigned: 0, paid: 0, isFixed: true }
-  ];
-
   if (pgPool) {
     await pgPool.query("TRUNCATE transactions");
     await pgPool.query("TRUNCATE budget_items");
-    for (const item of defaultEmptyBudgetItems) {
-      await pgPool.query(
-        "INSERT INTO budget_items (id, category, item, assigned, paid, is_fixed) VALUES ($1, $2, $3, $4, $5, $6)",
-        [item.id, item.category, item.item, item.assigned, item.paid, item.isFixed]
-      );
-    }
   } else {
     writeJson({
-      budgetItems: defaultEmptyBudgetItems,
+      budgetItems: [],
       transactions: []
     });
   }
