@@ -26,6 +26,17 @@ export interface BudgetItem {
   isFixed: boolean; // Fixed vs Variable
 }
 
+export interface Credit {
+  id: string;
+  name: string;
+  totalAmount: number;
+  remainingAmount: number;
+  monthlyPayment: number;
+  totalInstallments: number;
+  paidInstallments: number;
+  category: string;
+}
+
 // Initial seed data with correct Fixed vs Variable classification!
 const initialBudgetItems: BudgetItem[] = [];
 
@@ -92,6 +103,19 @@ export const initDb = async () => {
         );
       `);
 
+      await pgPool.query(`
+        CREATE TABLE IF NOT EXISTS credits (
+          id VARCHAR(50) PRIMARY KEY,
+          name VARCHAR(100) NOT NULL,
+          total_amount INT NOT NULL,
+          remaining_amount INT NOT NULL,
+          monthly_payment INT NOT NULL,
+          total_installments INT NOT NULL,
+          paid_installments INT NOT NULL,
+          category VARCHAR(100) NOT NULL
+        );
+      `);
+
       // Ensure columns exist on older tables
       await pgPool.query("ALTER TABLE budget_items ADD COLUMN IF NOT EXISTS is_fixed BOOLEAN DEFAULT false");
       await pgPool.query("ALTER TABLE transactions ADD COLUMN IF NOT EXISTS is_fixed BOOLEAN DEFAULT false");
@@ -117,7 +141,8 @@ export const initDb = async () => {
     if (!fs.existsSync(dbJsonPath)) {
       fs.writeFileSync(dbJsonPath, JSON.stringify({
         budgetItems: initialBudgetItems,
-        transactions: initialTransactions
+        transactions: initialTransactions,
+        credits: []
       }, null, 2));
     }
   }
@@ -126,17 +151,22 @@ export const initDb = async () => {
 // Read local JSON file
 const readJson = () => {
   if (!fs.existsSync(dbJsonPath)) {
-    return { budgetItems: initialBudgetItems, transactions: initialTransactions };
+    return { budgetItems: initialBudgetItems, transactions: initialTransactions, credits: [] };
   }
   try {
-    return JSON.parse(fs.readFileSync(dbJsonPath, "utf-8"));
+    const data = JSON.parse(fs.readFileSync(dbJsonPath, "utf-8"));
+    return {
+      budgetItems: data.budgetItems || [],
+      transactions: data.transactions || [],
+      credits: data.credits || []
+    };
   } catch (err) {
-    return { budgetItems: initialBudgetItems, transactions: initialTransactions };
+    return { budgetItems: initialBudgetItems, transactions: initialTransactions, credits: [] };
   }
 };
 
 // Write local JSON file
-const writeJson = (data: { budgetItems: BudgetItem[]; transactions: Transaction[] }) => {
+const writeJson = (data: { budgetItems: BudgetItem[]; transactions: Transaction[]; credits?: Credit[] }) => {
   try {
     fs.writeFileSync(dbJsonPath, JSON.stringify(data, null, 2));
   } catch (err) {
@@ -201,6 +231,22 @@ export const addTransaction = async (tx: Transaction): Promise<void> => {
           [`b-${Date.now()}`, tx.category, tx.category, tx.amount, tx.amount, tx.isFixed]
         );
       }
+
+      // Automatically update matching credits
+      const creditRes = await pgPool.query(
+        "SELECT id, total_installments, paid_installments, remaining_amount FROM credits WHERE category = $1",
+        [tx.category]
+      );
+      if (creditRes.rows.length > 0) {
+        for (const credit of creditRes.rows) {
+          const newPaid = Math.min(credit.total_installments, credit.paid_installments + 1);
+          const newRemaining = Math.max(0, credit.remaining_amount - tx.amount);
+          await pgPool.query(
+            "UPDATE credits SET paid_installments = $1, remaining_amount = $2 WHERE id = $3",
+            [newPaid, newRemaining, credit.id]
+          );
+        }
+      }
     }
   } else {
     const data = readJson();
@@ -231,6 +277,20 @@ export const addTransaction = async (tx: Transaction): Promise<void> => {
           isFixed: tx.isFixed
         });
       }
+
+      // Automatically update matching credits in JSON
+      if (data.credits) {
+        data.credits = data.credits.map((c: Credit) => {
+          if (c.category === tx.category) {
+            return {
+              ...c,
+              paidInstallments: Math.min(c.totalInstallments, c.paidInstallments + 1),
+              remainingAmount: Math.max(0, c.remainingAmount - tx.amount)
+            };
+          }
+          return c;
+        });
+      }
     }
 
     writeJson(data);
@@ -254,6 +314,22 @@ export const deleteTransaction = async (id: string): Promise<void> => {
           "UPDATE budget_items SET paid = GREATEST(0, paid - $1) WHERE category = $2",
           [tx.amount, tx.category]
         );
+
+        // Rollback credit installments and remaining amount
+        const creditRes = await pgPool.query(
+          "SELECT id, paid_installments, remaining_amount FROM credits WHERE category = $1",
+          [tx.category]
+        );
+        if (creditRes.rows.length > 0) {
+          for (const credit of creditRes.rows) {
+            const newPaid = Math.max(0, credit.paid_installments - 1);
+            const newRemaining = credit.remaining_amount + tx.amount;
+            await pgPool.query(
+              "UPDATE credits SET paid_installments = $1, remaining_amount = $2 WHERE id = $3",
+              [newPaid, newRemaining, credit.id]
+            );
+          }
+        }
       }
     }
   } else {
@@ -273,6 +349,20 @@ export const deleteTransaction = async (id: string): Promise<void> => {
           }
           return item;
         });
+
+        // Automatically update matching credits in JSON
+        if (data.credits) {
+          data.credits = data.credits.map((c: Credit) => {
+            if (c.category === tx.category) {
+              return {
+                ...c,
+                paidInstallments: Math.max(0, c.paidInstallments - 1),
+                remainingAmount: c.remainingAmount + tx.amount
+              };
+            }
+            return c;
+          });
+        }
       }
 
       writeJson(data);
@@ -343,12 +433,67 @@ export const deleteBudgetItem = async (id: string): Promise<void> => {
 export const resetDb = async (): Promise<void> => {
   const pgPool = getPool();
   if (pgPool) {
-    await pgPool.query("TRUNCATE transactions");
-    await pgPool.query("TRUNCATE budget_items");
+    await pgPool.query("TRUNCATE transactions CASCADE");
+    await pgPool.query("TRUNCATE budget_items CASCADE");
+    await pgPool.query("TRUNCATE credits CASCADE");
   } else {
     writeJson({
       budgetItems: [],
-      transactions: []
+      transactions: [],
+      credits: []
     });
+  }
+};
+
+export const getCredits = async (): Promise<Credit[]> => {
+  const pgPool = getPool();
+  if (pgPool) {
+    const res = await pgPool.query(
+      'SELECT id, name, total_amount as "totalAmount", remaining_amount as "remainingAmount", monthly_payment as "monthlyPayment", total_installments as "totalInstallments", paid_installments as "paidInstallments", category FROM credits ORDER BY id ASC'
+    );
+    return res.rows;
+  } else {
+    return readJson().credits || [];
+  }
+};
+
+export const addCredit = async (credit: Credit): Promise<void> => {
+  const pgPool = getPool();
+  if (pgPool) {
+    const checkRes = await pgPool.query("SELECT COUNT(*) FROM credits WHERE id = $1", [credit.id]);
+    const exists = parseInt(checkRes.rows[0].count) > 0;
+    if (exists) {
+      await pgPool.query(
+        "UPDATE credits SET name = $1, total_amount = $2, remaining_amount = $3, monthly_payment = $4, total_installments = $5, paid_installments = $6, category = $7 WHERE id = $8",
+        [credit.name, credit.totalAmount, credit.remainingAmount, credit.monthlyPayment, credit.totalInstallments, credit.paidInstallments, credit.category, credit.id]
+      );
+    } else {
+      await pgPool.query(
+        "INSERT INTO credits (id, name, total_amount, remaining_amount, monthly_payment, total_installments, paid_installments, category) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+        [credit.id, credit.name, credit.totalAmount, credit.remainingAmount, credit.monthlyPayment, credit.totalInstallments, credit.paidInstallments, credit.category]
+      );
+    }
+  } else {
+    const data = readJson();
+    if (!data.credits) data.credits = [];
+    const index = data.credits.findIndex((c: Credit) => c.id === credit.id);
+    if (index !== -1) {
+      data.credits[index] = credit;
+    } else {
+      data.credits.push(credit);
+    }
+    writeJson(data);
+  }
+};
+
+export const deleteCredit = async (id: string): Promise<void> => {
+  const pgPool = getPool();
+  if (pgPool) {
+    await pgPool.query("DELETE FROM credits WHERE id = $1", [id]);
+  } else {
+    const data = readJson();
+    if (!data.credits) data.credits = [];
+    data.credits = data.credits.filter((c: Credit) => c.id !== id);
+    writeJson(data);
   }
 };

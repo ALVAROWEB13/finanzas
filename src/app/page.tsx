@@ -56,6 +56,17 @@ interface Transaction {
   isFixed: boolean;
 }
 
+interface Credit {
+  id: string;
+  name: string;
+  totalAmount: number;
+  remainingAmount: number;
+  monthlyPayment: number;
+  totalInstallments: number;
+  paidInstallments: number;
+  category: string;
+}
+
 const DEFAULT_CATEGORIES: string[] = [];
 
 const getCategoryColor = (cat: string) => {
@@ -112,6 +123,19 @@ export default function TobiramaFinancialOS() {
 
   const [budgetItems, setBudgetItems] = useState<BudgetItem[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [credits, setCredits] = useState<Credit[]>([]);
+
+  // Credits modal and form state
+  const [showCreditModal, setShowCreditModal] = useState(false);
+  const [creditForm, setCreditForm] = useState({
+    name: "",
+    totalAmount: "",
+    remainingAmount: "",
+    monthlyPayment: "",
+    totalInstallments: "",
+    paidInstallments: "",
+    category: ""
+  });
 
   // Custom categories creation state
   const [newCategoryName, setNewCategoryName] = useState("");
@@ -173,15 +197,18 @@ export default function TobiramaFinancialOS() {
   // Real-time API synchronization helpers
   const fetchFromServer = async () => {
     try {
-      const [txRes, budgetRes] = await Promise.all([
+      const [txRes, budgetRes, creditsRes] = await Promise.all([
         fetch("/api/transactions"),
-        fetch("/api/budget")
+        fetch("/api/budget"),
+        fetch("/api/credits")
       ]);
-      if (txRes.ok && budgetRes.ok) {
+      if (txRes.ok && budgetRes.ok && creditsRes.ok) {
         const txData = await txRes.json();
         const budgetData = await budgetRes.json();
+        const creditsData = await creditsRes.json();
         setTransactions(txData);
         setBudgetItems(budgetData);
+        setCredits(creditsData);
       }
     } catch (err) {
       console.error("Failed to sync with real-time DB:", err);
@@ -219,13 +246,14 @@ export default function TobiramaFinancialOS() {
   const CATEGORIES = useMemo(() => {
     const cats = new Set(DEFAULT_CATEGORIES);
     budgetItems.forEach((item) => cats.add(item.category));
+    credits.forEach((c) => cats.add(c.category));
     transactions.forEach((tx) => {
       if (tx.category && tx.category !== "Ingresos") {
         cats.add(tx.category);
       }
     });
     return Array.from(cats);
-  }, [budgetItems, transactions]);
+  }, [budgetItems, credits, transactions]);
 
   const categoriesForSelection = useMemo(() => {
     return [...CATEGORIES, "Otra..."];
@@ -233,7 +261,7 @@ export default function TobiramaFinancialOS() {
 
   // --- DYNAMIC MONTHLY BUDGETITEMS COMPUTATION ---
   const monthlyBudgetItems = useMemo(() => {
-    return budgetItems.map((item) => {
+    const items = budgetItems.map((item) => {
       // Compute dynamically spent in selectedMonth for this category
       const spentInMonth = transactions
         .filter(
@@ -249,7 +277,31 @@ export default function TobiramaFinancialOS() {
         paid: spentInMonth,
       };
     });
-  }, [budgetItems, transactions, selectedMonth]);
+
+    credits.forEach((credit) => {
+      const spentInMonth = transactions
+        .filter(
+          (t) =>
+            t.category === credit.category &&
+            t.date.startsWith(selectedMonth) &&
+            (t.type === "Gasto Extra" || t.type === "Movimiento a Reserva")
+        )
+        .reduce((sum, t) => sum + t.amount, 0);
+
+      items.push({
+        id: `credit-${credit.id}`,
+        category: credit.category,
+        item: `${credit.name} (Cuota ${credit.paidInstallments}/${credit.totalInstallments})`,
+        assigned: credit.monthlyPayment,
+        paid: spentInMonth,
+        isFixed: true,
+        isCredit: true,
+        creditId: credit.id
+      } as any);
+    });
+
+    return items;
+  }, [budgetItems, transactions, credits, selectedMonth]);
 
   // --- REAL-TIME ANALYSIS COMPUTATIONS ---
   const flowMetrics = useMemo(() => {
@@ -719,7 +771,90 @@ export default function TobiramaFinancialOS() {
     }
   };
 
-  const handleTogglePaid = async (item: BudgetItem) => {
+  const handleTogglePaid = async (item: any) => {
+    if (item.isCredit) {
+      const credit = credits.find(c => c.id === item.creditId);
+      if (!credit) return;
+
+      const isCurrentlyPaid = item.paid >= item.assigned && item.assigned > 0;
+      
+      if (isCurrentlyPaid) {
+        // Find the transaction for this credit category in this month and delete it
+        const txToDelete = transactions.find(
+          (t) =>
+            t.category === credit.category &&
+            t.date.startsWith(selectedMonth) &&
+            (t.type === "Gasto Extra" || t.type === "Movimiento a Reserva")
+        );
+        if (txToDelete) {
+          // Optimistically delete transaction
+          setTransactions(prev => prev.filter(t => t.id !== txToDelete.id));
+          
+          // Optimistically update credit locally
+          setCredits(prev => prev.map(c => c.id === credit.id ? {
+            ...c,
+            paidInstallments: Math.max(0, c.paidInstallments - 1),
+            remainingAmount: c.remainingAmount + txToDelete.amount
+          } : c));
+
+          const timeStr = new Date().toLocaleTimeString();
+          setTerminalLogs((prev) => [
+            ...prev,
+            `[${timeStr}] CRÉDITO: Abono a '${credit.name}' marcado como PENDIENTE. Eliminando transacción.`
+          ]);
+
+          try {
+            await fetch(`/api/transactions?id=${txToDelete.id}`, { method: "DELETE" });
+            fetchFromServer();
+          } catch (err) {
+            console.error("Failed to delete credit payment transaction:", err);
+          }
+        }
+      } else {
+        // Register a new payment transaction
+        const newTx: Transaction = {
+          id: `t-${Date.now()}`,
+          date: selectedMonth === new Date().toISOString().slice(0, 7)
+            ? new Date().toISOString().split("T")[0]
+            : `${selectedMonth}-01`,
+          description: `Pago Cuota: ${credit.name}`,
+          type: "Gasto Extra",
+          paymentMethod: "Débito",
+          category: credit.category,
+          amount: credit.monthlyPayment,
+          isFixed: true
+        };
+
+        // Optimistically add transaction
+        setTransactions(prev => [newTx, ...prev]);
+
+        // Optimistically update credit locally
+        setCredits(prev => prev.map(c => c.id === credit.id ? {
+          ...c,
+          paidInstallments: Math.min(c.totalInstallments, c.paidInstallments + 1),
+          remainingAmount: Math.max(0, c.remainingAmount - credit.monthlyPayment)
+        } : c));
+
+        const timeStr = new Date().toLocaleTimeString();
+        setTerminalLogs((prev) => [
+          ...prev,
+          `[${timeStr}] CRÉDITO: Abono a '${credit.name}' de ${formatCOP(credit.monthlyPayment)} registrado como PAGADO.`
+        ]);
+
+        try {
+          await fetch("/api/transactions", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(newTx),
+          });
+          fetchFromServer();
+        } catch (err) {
+          console.error("Failed to save credit payment transaction:", err);
+        }
+      }
+      return;
+    }
+
     const isCurrentlyPaid = item.paid >= item.assigned && item.assigned > 0;
     const newPaid = isCurrentlyPaid ? 0 : item.assigned;
 
@@ -734,7 +869,9 @@ export default function TobiramaFinancialOS() {
     if (diff !== 0) {
       adjustmentTx = {
         id: `t-${Date.now()}`,
-        date: new Date().toISOString().split("T")[0],
+        date: selectedMonth === new Date().toISOString().slice(0, 7)
+          ? new Date().toISOString().split("T")[0]
+          : `${selectedMonth}-01`,
         description: diff > 0 ? `Pago rápido: ${item.item}` : `Ajuste débito: ${item.item}`,
         type: diff > 0 ? "Gasto Extra" : "Ingreso",
         paymentMethod: "Débito",
@@ -786,6 +923,7 @@ export default function TobiramaFinancialOS() {
     // Optimistic UI updates
     setTransactions([]);
     setBudgetItems([]);
+    setCredits([]);
 
     try {
       const res = await fetch("/api/reset", {
@@ -805,6 +943,90 @@ export default function TobiramaFinancialOS() {
     } catch (err) {
       console.error("Failed to reset database:", err);
       alert("Hubo un error al restablecer la base de datos.");
+    }
+  };
+
+  const handleAddCreditSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const totalAmt = parseInt(creditForm.totalAmount) || 0;
+    const remainingAmt = parseInt(creditForm.remainingAmount) || 0;
+    const monthlyPay = parseInt(creditForm.monthlyPayment) || 0;
+    const totalInst = parseInt(creditForm.totalInstallments) || 0;
+    const paidInst = parseInt(creditForm.paidInstallments) || 0;
+    const categoryVal = creditForm.category.trim();
+
+    if (!creditForm.name || totalAmt <= 0 || !categoryVal) return;
+
+    const newCredit: Credit = {
+      id: `c-${Date.now()}`,
+      name: creditForm.name,
+      totalAmount: totalAmt,
+      remainingAmount: remainingAmt,
+      monthlyPayment: monthlyPay,
+      totalInstallments: totalInst,
+      paidInstallments: paidInst,
+      category: categoryVal
+    };
+
+    // Optimistically update locally
+    setCredits((prev) => [...prev, newCredit]);
+    setShowCreditModal(false);
+    setCreditForm({
+      name: "",
+      totalAmount: "",
+      remainingAmount: "",
+      monthlyPayment: "",
+      totalInstallments: "",
+      paidInstallments: "",
+      category: ""
+    });
+
+    const timeStr = new Date().toLocaleTimeString();
+    setTerminalLogs((prev) => [
+      ...prev,
+      `[${timeStr}] CRÉDITO: Se registró un nuevo crédito '${newCredit.name}' en la categoría '${newCredit.category}'.`
+    ]);
+
+    try {
+      const res = await fetch("/api/credits", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(newCredit)
+      });
+      if (!res.ok) {
+        throw new Error("Failed to create credit on server");
+      }
+      fetchFromServer();
+    } catch (err) {
+      console.error("Failed to add credit:", err);
+    }
+  };
+
+  const handleDeleteCredit = async (id: string) => {
+    const creditToDelete = credits.find(c => c.id === id);
+    if (!creditToDelete) return;
+
+    if (!confirm(`¿Estás seguro de que deseas eliminar el crédito "${creditToDelete.name}"?`)) return;
+
+    // Optimistically update locally
+    setCredits((prev) => prev.filter((c) => c.id !== id));
+
+    const timeStr = new Date().toLocaleTimeString();
+    setTerminalLogs((prev) => [
+      ...prev,
+      `[${timeStr}] CRÉDITO: El crédito '${creditToDelete.name}' fue eliminado del sistema.`
+    ]);
+
+    try {
+      const res = await fetch(`/api/credits?id=${id}`, {
+        method: "DELETE"
+      });
+      if (!res.ok) {
+        throw new Error("Failed to delete credit on server");
+      }
+      fetchFromServer();
+    } catch (err) {
+      console.error("Failed to delete credit:", err);
     }
   };
 
@@ -1683,6 +1905,103 @@ export default function TobiramaFinancialOS() {
                   </div>
                 </div>
 
+                {/* Credits and Loans Report Section */}
+                <div className="glass-panel rounded-2xl p-6 bg-[#0a0b0d]/50 border-white/[0.04] hover:border-white/[0.08] transition-all">
+                  <div className="flex justify-between items-center mb-6">
+                    <div>
+                      <span className="text-[9px] text-slate-500 uppercase tracking-widest font-mono block font-semibold">SEGUIMIENTO DE CRÉDITOS</span>
+                      <h4 className="text-sm font-bold text-white mt-1">Créditos y Obligaciones Financieras</h4>
+                    </div>
+                    <button
+                      onClick={() => setShowCreditModal(true)}
+                      className="px-3 py-1.5 rounded-lg bg-white hover:bg-slate-200 text-black font-bold text-xs uppercase tracking-wide transition-all cursor-pointer"
+                    >
+                      + Registrar Crédito
+                    </button>
+                  </div>
+
+                  {credits.length === 0 ? (
+                    <div className="text-center py-10 border border-dashed border-white/[0.04] rounded-xl font-mono text-xs text-slate-650 bg-black/20">
+                      No hay créditos registrados en el sistema.<br/>
+                      Registra tus compromisos financieros para realizar seguimiento de cuotas y saldos.
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {credits.map((credit) => {
+                        const cuotasPercent = credit.totalInstallments > 0 
+                          ? (credit.paidInstallments / credit.totalInstallments) * 100 
+                          : 0;
+                        const debtPaid = Math.max(0, credit.totalAmount - credit.remainingAmount);
+                        const debtPercent = credit.totalAmount > 0 
+                          ? (debtPaid / credit.totalAmount) * 100 
+                          : 0;
+
+                        return (
+                          <div 
+                            key={credit.id} 
+                            className="bg-[#050608]/60 border border-white/[0.03] rounded-xl p-4.5 space-y-4 hover:border-purple-500/20 transition-all relative group"
+                          >
+                            <div className="flex justify-between items-start">
+                              <div>
+                                <h5 className="text-xs font-bold text-slate-200">{credit.name}</h5>
+                                <span className="text-[9px] text-slate-500 uppercase tracking-wider font-mono mt-0.5 block">
+                                  {credit.category}
+                                </span>
+                              </div>
+                              <button
+                                onClick={() => handleDeleteCredit(credit.id)}
+                                className="p-1.5 rounded bg-red-950/20 border border-red-900/30 text-red-400 hover:bg-red-950/40 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-all cursor-pointer"
+                                title="Eliminar Crédito"
+                              >
+                                <Trash2 className="h-3 w-3" />
+                              </button>
+                            </div>
+
+                            {/* Installment Progress */}
+                            <div className="space-y-1">
+                              <div className="flex justify-between text-[9px] font-mono text-slate-400">
+                                <span>Abono de Cuotas</span>
+                                <span>
+                                  {credit.paidInstallments}/{credit.totalInstallments} ({Math.round(cuotasPercent)}%)
+                                </span>
+                              </div>
+                              <div className="h-1.5 w-full bg-zinc-950 rounded-full overflow-hidden">
+                                <div 
+                                  className="h-full bg-gradient-to-r from-blue-500 to-cyan-400 rounded-full" 
+                                  style={{ width: `${Math.min(100, Math.max(0, cuotasPercent))}%` }}
+                                />
+                              </div>
+                            </div>
+
+                            {/* Debt Progress */}
+                            <div className="space-y-1">
+                              <div className="flex justify-between text-[9px] font-mono text-slate-400">
+                                <span>Saldo Amortizado</span>
+                                <span>{Math.round(debtPercent)}%</span>
+                              </div>
+                              <div className="h-1.5 w-full bg-zinc-950 rounded-full overflow-hidden">
+                                <div 
+                                  className="h-full bg-gradient-to-r from-emerald-500 to-green-400 rounded-full" 
+                                  style={{ width: `${Math.min(100, Math.max(0, debtPercent))}%` }}
+                                />
+                              </div>
+                              <div className="flex justify-between text-[9px] font-mono text-slate-500 pt-0.5">
+                                <span>P.: {formatCOP(credit.remainingAmount)}</span>
+                                <span>T.: {formatCOP(credit.totalAmount)}</span>
+                              </div>
+                            </div>
+
+                            <div className="pt-2.5 border-t border-white/[0.02] flex justify-between items-center text-[9px] font-mono">
+                              <span className="text-slate-500">PAGO MENSUAL</span>
+                              <span className="text-slate-200 font-bold">{formatCOP(credit.monthlyPayment)}</span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
                 {/* Bottom Recent Entities table mapping */}
                 <div className="glass-panel rounded-2xl p-6 bg-[#0a0b0d]/50 border-white/[0.04]">
                   <div className="flex justify-between items-center mb-6">
@@ -1704,7 +2023,7 @@ export default function TobiramaFinancialOS() {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-white/[0.02]">
-                        {budgetItems.map((item, i) => {
+                        {monthlyBudgetItems.map((item, i) => {
                           const outstanding = Math.max(0, item.assigned - item.paid);
                           const isPaid = outstanding === 0;
                           
@@ -2340,7 +2659,7 @@ export default function TobiramaFinancialOS() {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-white/[0.02] text-sm">
-                        {budgetItems.map((item) => {
+                        {monthlyBudgetItems.map((item) => {
                           const outstanding = Math.max(0, item.assigned - item.paid);
                           const isPaid = outstanding === 0;
 
@@ -2400,18 +2719,24 @@ export default function TobiramaFinancialOS() {
                                 </button>
                               </td>
                               <td className="px-6 py-4.5 text-center space-x-2">
-                                <button
-                                  onClick={() => handleEditBudget(item)}
-                                  className="px-2.5 py-1 rounded bg-zinc-900 border border-white/[0.04] hover:bg-zinc-800 text-xs font-semibold text-slate-300 transition-all cursor-pointer"
-                                >
-                                  Editar
-                                </button>
-                                <button
-                                  onClick={() => handleDeleteBudget(item.id)}
-                                  className="px-2.5 py-1 rounded bg-red-950/20 border border-red-900/30 hover:bg-red-950/45 text-xs font-semibold text-red-400 transition-all cursor-pointer"
-                                >
-                                  Borrar
-                                </button>
+                                {(item as any).isCredit ? (
+                                  <span className="text-[10px] text-slate-500 font-mono italic">Crédito Activo</span>
+                                ) : (
+                                  <>
+                                    <button
+                                      onClick={() => handleEditBudget(item)}
+                                      className="px-2.5 py-1 rounded bg-zinc-900 border border-white/[0.04] hover:bg-zinc-800 text-xs font-semibold text-slate-300 transition-all cursor-pointer"
+                                    >
+                                      Editar
+                                    </button>
+                                    <button
+                                      onClick={() => handleDeleteBudget(item.id)}
+                                      className="px-2.5 py-1 rounded bg-red-950/20 border border-red-900/30 hover:bg-red-950/45 text-xs font-semibold text-red-400 transition-all cursor-pointer"
+                                    >
+                                      Borrar
+                                    </button>
+                                  </>
+                                )}
                               </td>
                             </tr>
                           );
@@ -2557,6 +2882,159 @@ export default function TobiramaFinancialOS() {
                   Guardar Cambios
                 </button>
               </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* --- CREDIT REGISTRATION MODAL --- */}
+      <AnimatePresence>
+        {showCreditModal && (
+          <div className="fixed inset-0 flex items-center justify-center z-50 p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowCreditModal(false)}
+              className="absolute inset-0 bg-black/80 backdrop-blur-sm"
+            />
+
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              className="relative w-full max-w-md bg-black border border-white/[0.06] rounded-2xl p-6 shadow-2xl z-10 space-y-5"
+            >
+              <div className="flex justify-between items-center">
+                <div>
+                  <h4 className="text-base font-bold text-white font-mono">REGISTRAR CRÉDITO</h4>
+                  <p className="text-xs text-slate-500">Añadir una nueva obligación o préstamo al control mensual.</p>
+                </div>
+                <button
+                  onClick={() => setShowCreditModal(false)}
+                  className="p-1 rounded-lg bg-white/5 text-slate-400 hover:text-white"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              <form onSubmit={handleAddCreditSubmit} className="space-y-4">
+                <div>
+                  <label className="block text-[10px] font-mono uppercase text-slate-550 mb-1">Nombre de la Entidad / Préstamo</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="Ej. ADDI, Lulo Bank, Cuota Apartamento"
+                    value={creditForm.name}
+                    onChange={(e) => setCreditForm({ ...creditForm, name: e.target.value })}
+                    className="w-full px-4 py-2.5 rounded-xl border border-white/[0.06] bg-[#050608] text-sm text-slate-200 placeholder-slate-700 focus:border-white/[0.15] focus:outline-none"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-[10px] font-mono uppercase text-slate-550 mb-1">Cupo Total / Monto Prestado</label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 font-mono text-xs">$</span>
+                      <input
+                        type="number"
+                        required
+                        placeholder="3000000"
+                        value={creditForm.totalAmount}
+                        onChange={(e) => setCreditForm({ ...creditForm, totalAmount: e.target.value })}
+                        className="w-full pl-7 pr-3 py-2.5 rounded-xl border border-white/[0.06] bg-[#050608] text-sm font-mono text-slate-200 placeholder-slate-700 focus:border-white/[0.15] focus:outline-none"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-mono uppercase text-slate-550 mb-1">Saldo Pendiente Actual</label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 font-mono text-xs">$</span>
+                      <input
+                        type="number"
+                        required
+                        placeholder="1200000"
+                        value={creditForm.remainingAmount}
+                        onChange={(e) => setCreditForm({ ...creditForm, remainingAmount: e.target.value })}
+                        className="w-full pl-7 pr-3 py-2.5 rounded-xl border border-white/[0.06] bg-[#050608] text-sm font-mono text-slate-200 placeholder-slate-700 focus:border-white/[0.15] focus:outline-none"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="col-span-1">
+                    <label className="block text-[10px] font-mono uppercase text-slate-550 mb-1">Cuotas Totales</label>
+                    <input
+                      type="number"
+                      required
+                      placeholder="10"
+                      value={creditForm.totalInstallments}
+                      onChange={(e) => setCreditForm({ ...creditForm, totalInstallments: e.target.value })}
+                      className="w-full px-3 py-2.5 rounded-xl border border-white/[0.06] bg-[#050608] text-sm font-mono text-slate-200 placeholder-slate-700 focus:border-white/[0.15] focus:outline-none"
+                    />
+                  </div>
+
+                  <div className="col-span-1">
+                    <label className="block text-[10px] font-mono uppercase text-slate-550 mb-1">Cuotas Pagas</label>
+                    <input
+                      type="number"
+                      required
+                      placeholder="6"
+                      value={creditForm.paidInstallments}
+                      onChange={(e) => setCreditForm({ ...creditForm, paidInstallments: e.target.value })}
+                      className="w-full px-3 py-2.5 rounded-xl border border-white/[0.06] bg-[#050608] text-sm font-mono text-slate-200 placeholder-slate-700 focus:border-white/[0.15] focus:outline-none"
+                    />
+                  </div>
+
+                  <div className="col-span-1">
+                    <label className="block text-[10px] font-mono uppercase text-slate-550 mb-1">Pago Mensual</label>
+                    <input
+                      type="number"
+                      required
+                      placeholder="300000"
+                      value={creditForm.monthlyPayment}
+                      onChange={(e) => setCreditForm({ ...creditForm, monthlyPayment: e.target.value })}
+                      className="w-full px-3 py-2.5 rounded-xl border border-white/[0.06] bg-[#050608] text-sm font-mono text-slate-200 placeholder-slate-700 focus:border-white/[0.15] focus:outline-none"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-mono uppercase text-slate-550 mb-1">Categoría del Presupuesto (Asociar)</label>
+                  <select
+                    required
+                    value={creditForm.category}
+                    onChange={(e) => setCreditForm({ ...creditForm, category: e.target.value })}
+                    className="w-full px-4 py-2.5 rounded-xl border border-white/[0.06] bg-[#050608] text-sm font-mono text-slate-200 focus:border-white/[0.15] focus:outline-none [color-scheme:dark]"
+                  >
+                    <option value="" disabled>Seleccione una categoría</option>
+                    {CATEGORIES.filter(c => c !== "Ingresos" && c !== "Ahorro / Reserva").map((cat) => (
+                      <option key={cat} value={cat}>{cat}</option>
+                    ))}
+                    <option value="Deudas de Consumo">Deudas de Consumo</option>
+                    <option value="Tarjetas de Crédito">Tarjetas de Crédito</option>
+                  </select>
+                </div>
+
+                <div className="flex gap-4 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowCreditModal(false)}
+                    className="flex-1 py-3 rounded-xl border border-white/[0.06] hover:bg-white/5 transition-all text-xs font-bold uppercase text-slate-400 cursor-pointer font-mono"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    className="flex-1 py-3 rounded-xl bg-white text-black hover:bg-slate-200 text-xs font-bold uppercase cursor-pointer font-mono"
+                  >
+                    Registrar Crédito
+                  </button>
+                </div>
+              </form>
             </motion.div>
           </div>
         )}
