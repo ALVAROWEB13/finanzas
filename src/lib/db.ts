@@ -1,3 +1,4 @@
+process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
 import { Pool } from "pg";
 import fs from "fs";
 import path from "path";
@@ -24,35 +25,22 @@ export interface BudgetItem {
 
 // Initial seed data exactly matching the user's uploaded spreadsheet!
 const initialBudgetItems: BudgetItem[] = [
-  { id: "b1", category: "Vivienda", item: "Vivienda", assigned: 800000, paid: 550000 },
-  { id: "b2", category: "Claro hogar", item: "Claro hogar", assigned: 0, paid: 87865 },
-  { id: "b3", category: "Datos movistar", item: "Datos movistar", assigned: 55000, paid: 0 },
-  { id: "b4", category: "Gym", item: "Gym", assigned: 79900, paid: 54900 },
-  { id: "b5", category: "Transporte", item: "Transporte", assigned: 0, paid: 270625 },
-  { id: "b6", category: "Aseo personal", item: "Aseo personal", assigned: 200000, paid: 374100 },
-  { id: "b7", category: "Netflix", item: "Netflix", assigned: 26000, paid: 38900 },
-  { id: "b8", category: "Google", item: "Google", assigned: 11000, paid: 39900 },
-  { id: "b9", category: "Seguro de vida", item: "Seguro de vida", assigned: 0, paid: 19500 },
-  { id: "b10", category: "Salidas", item: "Salidas", assigned: 500000, paid: 419249 },
-  { id: "b11", category: "Ahorro", item: "Ahorro", assigned: 500000, paid: 0 },
-  { id: "b12", category: "Ahorro 1", item: "Ahorro 1", assigned: 200000, paid: 120000 },
-  { id: "b13", category: "CREDITO", item: "CREDITO", assigned: 250000, paid: 163842 }
+  { id: "b1", category: "Vivienda", item: "Vivienda", assigned: 0, paid: 0 },
+  { id: "b2", category: "Claro hogar", item: "Claro hogar", assigned: 0, paid: 0 },
+  { id: "b3", category: "Datos movistar", item: "Datos movistar", assigned: 0, paid: 0 },
+  { id: "b4", category: "Gym", item: "Gym", assigned: 0, paid: 0 },
+  { id: "b5", category: "Transporte", item: "Transporte", assigned: 0, paid: 0 },
+  { id: "b6", category: "Aseo personal", item: "Aseo personal", assigned: 0, paid: 0 },
+  { id: "b7", category: "Netflix", item: "Netflix", assigned: 0, paid: 0 },
+  { id: "b8", category: "Google", item: "Google", assigned: 0, paid: 0 },
+  { id: "b9", category: "Seguro de vida", item: "Seguro de vida", assigned: 0, paid: 0 },
+  { id: "b10", category: "Salidas", item: "Salidas", assigned: 0, paid: 0 },
+  { id: "b11", category: "Ahorro", item: "Ahorro", assigned: 0, paid: 0 },
+  { id: "b12", category: "Ahorro 1", item: "Ahorro 1", assigned: 0, paid: 0 },
+  { id: "b13", category: "CREDITO", item: "CREDITO", assigned: 0, paid: 0 }
 ];
 
-const initialTransactions: Transaction[] = [
-  { id: "t1", date: "2026-06-01", description: "Ingreso Nómina Base", type: "Ingreso", paymentMethod: "Débito", category: "Ingresos", amount: 5976687 },
-  { id: "t2", date: "2026-06-02", description: "Abono Vivienda", type: "Gasto Extra", paymentMethod: "Débito", category: "Vivienda", amount: 550000 },
-  { id: "t3", date: "2026-06-02", description: "Pago Claro hogar", type: "Gasto Extra", paymentMethod: "Débito", category: "Claro hogar", amount: 87865 },
-  { id: "t4", date: "2026-06-03", description: "Mensualidad Gym", type: "Gasto Extra", paymentMethod: "Débito", category: "Gym", amount: 54900 },
-  { id: "t5", date: "2026-06-03", description: "Transportes varios", type: "Gasto Extra", paymentMethod: "Efectivo", category: "Transporte", amount: 270625 },
-  { id: "t6", date: "2026-06-04", description: "Mercado y Aseo personal", type: "Gasto Extra", paymentMethod: "Débito", category: "Aseo personal", amount: 374100 },
-  { id: "t7", date: "2026-06-04", description: "Suscripción Netflix", type: "Gasto Extra", paymentMethod: "TC", category: "Netflix", amount: 38900 },
-  { id: "t8", date: "2026-06-05", description: "Servicios en la nube Google", type: "Gasto Extra", paymentMethod: "TC", category: "Google", amount: 39900 },
-  { id: "t9", date: "2026-06-05", description: "Seguro de vida mensual", type: "Gasto Extra", paymentMethod: "Débito", category: "Seguro de vida", amount: 19500 },
-  { id: "t10", date: "2026-06-05", description: "Salida fin de semana", type: "Gasto Extra", paymentMethod: "Efectivo", category: "Salidas", amount: 419249 },
-  { id: "t11", date: "2026-06-05", description: "Ahorro Nu / Lulo (Abono 1)", type: "Movimiento a Reserva", paymentMethod: "Débito", category: "Ahorro 1", amount: 120000 },
-  { id: "t12", date: "2026-06-06", description: "Abono Crédito Bancario", type: "Gasto Extra", paymentMethod: "Débito", category: "CREDITO", amount: 163842 }
-];
+const initialTransactions: Transaction[] = [];
 
 let pool: Pool | null = null;
 
