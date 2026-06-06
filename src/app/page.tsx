@@ -29,13 +29,7 @@ import {
 } from "lucide-react";
 
 // --- TYPES ---
-type Category =
-  | "Vivienda"
-  | "Deudas de Consumo"
-  | "Tarjetas de Crédito"
-  | "Gastos Fijos"
-  | "Ahorro / Reserva"
-  | "Estilo de Vida / Mercado";
+type Category = string;
 
 type TransactionType = "Ingreso" | "Gasto Extra" | "Movimiento a Reserva";
 type PaymentMethod = "TC" | "Débito" | "Efectivo";
@@ -59,22 +53,36 @@ interface Transaction {
 }
 
 // --- CONSTANTS ---
-const CATEGORIES: Category[] = [
+const DEFAULT_CATEGORIES: string[] = [
   "Vivienda",
-  "Deudas de Consumo",
-  "Tarjetas de Crédito",
-  "Gastos Fijos",
-  "Ahorro / Reserva",
-  "Estilo de Vida / Mercado",
+  "Claro hogar",
+  "Datos movistar",
+  "Gym",
+  "Transporte",
+  "Aseo personal",
+  "Netflix",
+  "Google",
+  "Seguro de vida",
+  "Salidas",
+  "Ahorro",
+  "Ahorro 1",
+  "CREDITO"
 ];
 
-const CATEGORY_COLORS: Record<Category, string> = {
-  "Vivienda": "text-yellow-400 bg-yellow-500/10 border-yellow-500/20",
-  "Deudas de Consumo": "text-red-400 bg-red-500/10 border-red-500/20",
-  "Tarjetas de Crédito": "text-purple-400 bg-purple-500/10 border-purple-500/20",
-  "Gastos Fijos": "text-orange-400 bg-orange-500/10 border-orange-500/20",
-  "Ahorro / Reserva": "text-blue-400 bg-blue-500/10 border-blue-500/20",
-  "Estilo de Vida / Mercado": "text-emerald-400 bg-emerald-500/10 border-emerald-500/20",
+const getCategoryColor = (cat: string) => {
+  const hash = cat.split("").reduce((acc, char) => char.charCodeAt(0) + acc, 0);
+  const colors = [
+    "text-yellow-400 bg-yellow-500/10 border-yellow-500/20",
+    "text-emerald-400 bg-emerald-500/10 border-emerald-500/20",
+    "text-blue-400 bg-blue-500/10 border-blue-500/20",
+    "text-purple-400 bg-purple-500/10 border-purple-500/20",
+    "text-orange-400 bg-orange-500/10 border-orange-500/20",
+    "text-red-400 bg-red-500/10 border-red-500/20",
+    "text-pink-400 bg-pink-500/10 border-pink-500/20",
+    "text-cyan-400 bg-cyan-500/10 border-cyan-500/20",
+    "text-indigo-400 bg-indigo-500/10 border-indigo-500/20",
+  ];
+  return colors[hash % colors.length];
 };
 
 // --- CURRENCY UTILITY (Strict es-CO standard, no decimals) ---
@@ -87,16 +95,16 @@ const formatCOP = (value: number): string => {
   }).format(value);
 };
 
-const getCategoryIcon = (cat: Category) => {
-  switch (cat) {
-    case "Vivienda": return <Building2 className="h-3.5 w-3.5 text-yellow-400" />;
-    case "Deudas de Consumo": return <Coins className="h-3.5 w-3.5 text-red-400" />;
-    case "Tarjetas de Crédito": return <Sliders className="h-3.5 w-3.5 text-purple-400" />;
-    case "Gastos Fijos": return <FileText className="h-3.5 w-3.5 text-orange-400" />;
-    case "Ahorro / Reserva": return <TrendingUp className="h-3.5 w-3.5 text-blue-400" />;
-    case "Estilo de Vida / Mercado": return <Activity className="h-3.5 w-3.5 text-emerald-400" />;
-    default: return <Building2 className="h-3.5 w-3.5" />;
-  }
+const getCategoryIcon = (cat: string) => {
+  const c = cat.toLowerCase();
+  if (c.includes("vivienda")) return <Building2 className="h-3.5 w-3.5 text-yellow-400" />;
+  if (c.includes("claro") || c.includes("movistar") || c.includes("netflix") || c.includes("google")) return <Sliders className="h-3.5 w-3.5 text-purple-400" />;
+  if (c.includes("gym")) return <Activity className="h-3.5 w-3.5 text-orange-400" />;
+  if (c.includes("transporte")) return <ArrowDownLeft className="h-3.5 w-3.5 text-pink-400" />;
+  if (c.includes("aseo") || c.includes("salida")) return <Coins className="h-3.5 w-3.5 text-yellow-400" />;
+  if (c.includes("ahorro")) return <TrendingUp className="h-3.5 w-3.5 text-emerald-400" />;
+  if (c.includes("credito") || c.includes("deuda")) return <ArrowUpRight className="h-3.5 w-3.5 text-red-400" />;
+  return <FileText className="h-3.5 w-3.5 text-slate-400" />;
 };
 
 export default function TobiramaFinancialOS() {
@@ -109,96 +117,34 @@ export default function TobiramaFinancialOS() {
   const INITIAL_INCOME = 5976687; // Base Global Income ($5.976.687 COP)
 
   const [budgetItems, setBudgetItems] = useState<BudgetItem[]>([
-    {
-      id: "b1",
-      category: "Vivienda",
-      item: "Cuota Tamarindo",
-      assigned: 1427000,
-      paid: 1427000,
-    },
-    {
-      id: "b2",
-      category: "Deudas de Consumo",
-      item: "ADDI / Crédito",
-      assigned: 2029023,
-      paid: 2029023,
-    },
-    {
-      id: "b3",
-      category: "Tarjetas de Crédito",
-      item: "Cupo Utilizado",
-      assigned: 0,
-      paid: 0,
-    },
-    {
-      id: "b4",
-      category: "Gastos Fijos",
-      item: "Apoyo Madre & Internet",
-      assigned: 650000,
-      paid: 650000,
-    },
-    {
-      id: "b5",
-      category: "Ahorro / Reserva",
-      item: "Fondo Nu / Lulo",
-      assigned: 587029,
-      paid: 587029,
-    },
-    {
-      id: "b6",
-      category: "Estilo de Vida / Mercado",
-      item: "Gastos Mensuales",
-      assigned: 600000,
-      paid: 0,
-    },
+    { id: "b1", category: "Vivienda", item: "Vivienda", assigned: 800000, paid: 550000 },
+    { id: "b2", category: "Claro hogar", item: "Claro hogar", assigned: 0, paid: 87865 },
+    { id: "b3", category: "Datos movistar", item: "Datos movistar", assigned: 55000, paid: 0 },
+    { id: "b4", category: "Gym", item: "Gym", assigned: 79900, paid: 54900 },
+    { id: "b5", category: "Transporte", item: "Transporte", assigned: 0, paid: 270625 },
+    { id: "b6", category: "Aseo personal", item: "Aseo personal", assigned: 200000, paid: 374100 },
+    { id: "b7", category: "Netflix", item: "Netflix", assigned: 26000, paid: 38900 },
+    { id: "b8", category: "Google", item: "Google", assigned: 11000, paid: 39900 },
+    { id: "b9", category: "Seguro de vida", item: "Seguro de vida", assigned: 0, paid: 19500 },
+    { id: "b10", category: "Salidas", item: "Salidas", assigned: 500000, paid: 419249 },
+    { id: "b11", category: "Ahorro", item: "Ahorro", assigned: 500000, paid: 0 },
+    { id: "b12", category: "Ahorro 1", item: "Ahorro 1", assigned: 200000, paid: 120000 },
+    { id: "b13", category: "CREDITO", item: "CREDITO", assigned: 250000, paid: 163842 }
   ]);
 
   const [transactions, setTransactions] = useState<Transaction[]>([
-    {
-      id: "t1",
-      date: "2026-06-01",
-      description: "Ingreso Nómina Base",
-      type: "Ingreso",
-      paymentMethod: "Débito",
-      category: "Gastos Fijos",
-      amount: 5976687,
-    },
-    {
-      id: "t2",
-      date: "2026-06-02",
-      description: "Pago Cuota Tamarindo Jaramillo Mora",
-      type: "Gasto Extra",
-      paymentMethod: "Débito",
-      category: "Vivienda",
-      amount: 1427000,
-    },
-    {
-      id: "t3",
-      date: "2026-06-02",
-      description: "Liquidación Crédito ADDI",
-      type: "Gasto Extra",
-      paymentMethod: "Débito",
-      category: "Deudas de Consumo",
-      amount: 2029023,
-    },
-    {
-      id: "t4",
-      date: "2026-06-03",
-      description: "Fondo Nu / Lulo (Ahorro)",
-      type: "Movimiento a Reserva",
-      paymentMethod: "Débito",
-      category: "Ahorro / Reserva",
-      amount: 587029,
-    },
-    {
-      id: "t5",
-      date: "2026-06-03",
-      description: "Servicios e Internet & Apoyo Familiar",
-      type: "Gasto Extra",
-      paymentMethod: "Débito",
-      category: "Gastos Fijos",
-      amount: 650000,
-    },
+    { id: "t1", date: "2026-06-01", description: "Ingreso Nómina Base", type: "Ingreso", paymentMethod: "Débito", category: "Ingresos", amount: 5976687 },
+    { id: "t2", date: "2026-06-02", description: "Abono Vivienda", type: "Gasto Extra", paymentMethod: "Débito", category: "Vivienda", amount: 550000 },
+    { id: "t3", date: "2026-06-02", description: "Pago Claro hogar", type: "Gasto Extra", paymentMethod: "Débito", category: "Claro hogar", amount: 87865 },
+    { id: "t4", date: "2026-06-03", description: "Mensualidad Gym", type: "Gasto Extra", paymentMethod: "Débito", category: "Gym", amount: 54900 },
+    { id: "t5", date: "2026-06-03", description: "Transportes varios", type: "Gasto Extra", paymentMethod: "Efectivo", category: "Transporte", amount: 270625 },
+    { id: "t6", date: "2026-06-04", description: "Mercado y Aseo personal", type: "Gasto Extra", paymentMethod: "Débito", category: "Aseo personal", amount: 374100 },
+    { id: "t7", date: "2026-06-04", description: "Suscripción Netflix", type: "Gasto Extra", paymentMethod: "TC", category: "Netflix", amount: 38900 },
+    { id: "t8", date: "2026-06-05", description: "Servicios en la nube Google", type: "Gasto Extra", paymentMethod: "TC", category: "Google", amount: 39900 },
+    { id: "t9", date: "2026-06-05", description: "Seguro de vida mensual", type: "Gasto Extra", paymentMethod: "Débito", category: "Seguro de vida", amount: 19500 },
+    { id: "t10", date: "2026-06-05", description: "Salida fin de semana", type: "Gasto Extra", paymentMethod: "Efectivo", category: "Salidas", amount: 419249 },
+    { id: "t11", date: "2026-06-05", description: "Ahorro Nu / Lulo (Abono 1)", type: "Movimiento a Reserva", paymentMethod: "Débito", category: "Ahorro 1", amount: 120000 },
+    { id: "t12", date: "2026-06-06", description: "Abono Crédito Bancario", type: "Gasto Extra", paymentMethod: "Débito", category: "CREDITO", amount: 163842 }
   ]);
 
   // --- UI STATE ---
@@ -211,7 +157,8 @@ export default function TobiramaFinancialOS() {
   // --- QUICK REGISTRATION FORM STATE (Optimized to match screen 2) ---
   const [inputMode, setInputMode] = useState<"keypad" | "voice" | "invoice">("keypad");
   const [quickAmount, setQuickAmount] = useState("0");
-  const [quickCategory, setQuickCategory] = useState<Category>("Estilo de Vida / Mercado");
+  const [quickCategory, setQuickCategory] = useState<Category>("Vivienda");
+  const [customCategory, setCustomCategory] = useState("");
   const [quickMethod, setQuickMethod] = useState<PaymentMethod>("Débito");
   const [quickType, setQuickType] = useState<TransactionType>("Gasto Extra");
   const [quickDescription, setQuickDescription] = useState("");
@@ -245,6 +192,92 @@ export default function TobiramaFinancialOS() {
     }
   }, [terminalLogs]);
 
+  // Real-time API synchronization helpers
+  const fetchFromServer = async () => {
+    try {
+      const [txRes, budgetRes] = await Promise.all([
+        fetch("/api/transactions"),
+        fetch("/api/budget")
+      ]);
+      if (txRes.ok && budgetRes.ok) {
+        const txData = await txRes.json();
+        const budgetData = await budgetRes.json();
+        setTransactions(txData);
+        setBudgetItems(budgetData);
+      }
+    } catch (err) {
+      console.error("Failed to sync with real-time DB:", err);
+    }
+  };
+
+  useEffect(() => {
+    fetchFromServer();
+    const interval = setInterval(fetchFromServer, 4000);
+    return () => clearInterval(interval);
+  }, []);
+
+
+  // --- COMPUTE CATEGORIES LIST ---
+  const CATEGORIES = useMemo(() => {
+    const cats = new Set(DEFAULT_CATEGORIES);
+    budgetItems.forEach((item) => cats.add(item.category));
+    transactions.forEach((tx) => {
+      if (tx.category && tx.category !== "Ingresos") {
+        cats.add(tx.category);
+      }
+    });
+    return Array.from(cats);
+  }, [budgetItems, transactions]);
+
+  const categoriesForSelection = useMemo(() => {
+    return [...CATEGORIES, "Otra..."];
+  }, [CATEGORIES]);
+
+  // --- REAL-TIME ANALYSIS COMPUTATIONS ---
+  const flowMetrics = useMemo(() => {
+    const totalIncomes = transactions
+      .filter((t) => t.type === "Ingreso")
+      .reduce((sum, t) => sum + t.amount, 0);
+
+    const totalExpenses = transactions
+      .filter((t) => t.type === "Gasto Extra")
+      .reduce((sum, t) => sum + t.amount, 0);
+
+    const totalReserves = transactions
+      .filter((t) => t.type === "Movimiento a Reserva")
+      .reduce((sum, t) => sum + t.amount, 0);
+
+    const spendRatio = totalIncomes > 0 ? (totalExpenses / totalIncomes) * 100 : 0;
+    const savingsRatio = totalIncomes > 0 ? (totalReserves / totalIncomes) * 100 : 0;
+    
+    // Group transactions by category to find top spend category
+    const categorySpent: { [key: string]: number } = {};
+    transactions.forEach(t => {
+      if (t.type === "Gasto Extra" || t.type === "Movimiento a Reserva") {
+        categorySpent[t.category] = (categorySpent[t.category] || 0) + t.amount;
+      }
+    });
+
+    const sortedCats = Object.entries(categorySpent)
+      .map(([category, amount]) => ({ category, amount }))
+      .sort((a, b) => b.amount - a.amount);
+
+    const topCategory = sortedCats[0] || null;
+    const topCategoryPercent = totalExpenses + totalReserves > 0 && topCategory
+      ? (topCategory.amount / (totalExpenses + totalReserves)) * 100
+      : 0;
+
+    return {
+      totalIncomes,
+      totalExpenses,
+      totalReserves,
+      spendRatio,
+      savingsRatio,
+      topCategory,
+      topCategoryPercent,
+      sortedCats
+    };
+  }, [transactions]);
 
   // --- REACTIVE COMPUTATIONS ---
   // Real Liquidez de Bolsillo (Termómetro de Liquidez)
@@ -371,13 +404,13 @@ export default function TobiramaFinancialOS() {
     setEditAssignedValue(item.assigned.toString());
   };
 
-  const saveBudgetEdit = () => {
+  const saveBudgetEdit = async () => {
     if (!editingItem) return;
 
     const newPaid = parseInt(editPaidValue) || 0;
     const newAssigned = parseInt(editAssignedValue) || 0;
 
-    // Reactively update budget items
+    // Optimistically update budget items locally
     setBudgetItems((prev) =>
       prev.map((item) =>
         item.id === editingItem.id ? { ...item, paid: newPaid, assigned: newAssigned } : item
@@ -386,8 +419,9 @@ export default function TobiramaFinancialOS() {
 
     // Reactively insert a transaction to adjust cash ledger
     const diff = newPaid - editingItem.paid;
+    let adjustmentTx: Transaction | null = null;
     if (diff !== 0) {
-      const adjustmentTx: Transaction = {
+      adjustmentTx = {
         id: `t-${Date.now()}`,
         date: new Date().toISOString().split("T")[0],
         description: `Ajuste presupuesto: ${editingItem.item}`,
@@ -396,7 +430,7 @@ export default function TobiramaFinancialOS() {
         category: editingItem.category,
         amount: Math.abs(diff),
       };
-      setTransactions((prev) => [adjustmentTx, ...prev]);
+      setTransactions((prev) => [adjustmentTx!, ...prev]);
 
       const timeStr = new Date().toLocaleTimeString();
       setTerminalLogs((prev) => [
@@ -405,16 +439,46 @@ export default function TobiramaFinancialOS() {
       ]);
     }
 
+    try {
+      // Update the budget item on database
+      const budgetRes = await fetch("/api/budget", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: editingItem.id,
+          assigned: newAssigned,
+          paid: newPaid
+        }),
+      });
+
+      // If there was a difference, write the transaction adjustment
+      if (adjustmentTx) {
+        await fetch("/api/transactions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(adjustmentTx),
+        });
+      }
+
+      if (!budgetRes.ok) {
+        throw new Error("Failed to update budget on DB");
+      }
+      fetchFromServer(); // Refresh in background
+    } catch (err) {
+      console.error("Failed to sync budget edit with DB:", err);
+    }
+
     setEditingItem(null);
   };
 
   // Quick register transaction form submission (Vista C - Screen 2 style)
-  const handleQuickRegister = (e: React.FormEvent) => {
+  const handleQuickRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     const amountVal = parseInt(quickAmount) || 0;
     if (amountVal <= 0) return;
 
-    const desc = quickDescription.trim() || `Transacción flash: ${quickCategory}`;
+    const finalCategory = quickCategory === "Otra..." ? (customCategory.trim() || "Otros") : quickCategory;
+    const desc = quickDescription.trim() || `Transacción flash: ${finalCategory}`;
 
     // Add transaction to central state
     const newTx: Transaction = {
@@ -423,7 +487,7 @@ export default function TobiramaFinancialOS() {
       description: desc,
       type: quickType,
       paymentMethod: quickMethod,
-      category: quickCategory,
+      category: finalCategory,
       amount: amountVal,
     };
 
@@ -431,9 +495,11 @@ export default function TobiramaFinancialOS() {
 
     // Reactively update budget items
     if (quickType === "Gasto Extra" || quickType === "Movimiento a Reserva") {
-      setBudgetItems((prev) =>
-        prev.map((item) => {
-          if (item.category === quickCategory) {
+      setBudgetItems((prev) => {
+        let categoryFound = false;
+        const updated = prev.map((item) => {
+          if (item.category === finalCategory) {
+            categoryFound = true;
             return {
               ...item,
               paid: item.paid + amountVal,
@@ -441,24 +507,52 @@ export default function TobiramaFinancialOS() {
             };
           }
           return item;
-        })
-      );
+        });
+        if (!categoryFound) {
+          updated.push({
+            id: `b-${Date.now()}`,
+            category: finalCategory,
+            item: finalCategory,
+            assigned: amountVal,
+            paid: amountVal,
+          });
+        }
+        return updated;
+      });
+    }
+
+    try {
+      const res = await fetch("/api/transactions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(newTx),
+      });
+      if (!res.ok) {
+        throw new Error("Failed to save transaction to DB");
+      }
+      fetchFromServer(); // Refresh to ensure perfect sync
+    } catch (err) {
+      console.error("Failed to sync new transaction with DB:", err);
     }
 
     const timeStr = new Date().toLocaleTimeString();
     setTerminalLogs((prev) => [
       ...prev,
-      `[${timeStr}] TRANSACCIÓN: Registro flash de ${formatCOP(amountVal)} en la categoría '${quickCategory}' añadido con éxito.`
+      `[${timeStr}] TRANSACCIÓN: Registro flash de ${formatCOP(amountVal)} en la categoría '${finalCategory}' añadido con éxito.`
     ]);
 
     setQuickSuccessMsg(true);
     setQuickAmount("0");
     setQuickDescription("");
+    setCustomCategory("");
+    if (quickCategory === "Otra...") {
+      setQuickCategory("Vivienda"); // reset
+    }
     setTimeout(() => setQuickSuccessMsg(false), 3500);
   };
 
   // REACTIVE TRANSACTION DELETION (Clear data cleanly)
-  const handleDeleteTransaction = (id: string) => {
+  const handleDeleteTransaction = async (id: string) => {
     const txToDelete = transactions.find((t) => t.id === id);
     if (!txToDelete) return;
 
@@ -478,6 +572,18 @@ export default function TobiramaFinancialOS() {
           return item;
         })
       );
+    }
+
+    try {
+      const res = await fetch(`/api/transactions?id=${id}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) {
+        throw new Error("Failed to delete transaction on DB");
+      }
+      fetchFromServer(); // Sync ledger
+    } catch (err) {
+      console.error("Failed to delete transaction from DB:", err);
     }
 
     // Append terminal logs
@@ -1176,37 +1282,138 @@ export default function TobiramaFinancialOS() {
 
                 </div>
 
-                {/* Expense distribution metrics */}
+                {/* Real-time Analysis and Reports Center */}
                 <div className="glass-panel rounded-2xl p-6 bg-[#0a0b0d]/50 border-white/[0.04] hover:border-white/[0.08] transition-all">
                   <div className="flex justify-between items-center mb-6">
                     <div>
-                      <span className="text-[9px] text-slate-500 uppercase tracking-widest font-mono block font-semibold font-mono">CONSOLIDADO REAL</span>
-                      <h4 className="text-sm font-bold text-white mt-1">Distribución de Egresos</h4>
+                      <span className="text-[9px] text-slate-500 uppercase tracking-widest font-mono block font-semibold font-mono">CENTRO DE ANÁLISIS Y FLUJO DE CAJA</span>
+                      <h4 className="text-sm font-bold text-white mt-1">Diagnóstico de Movimientos y Reportes</h4>
                     </div>
-                    <span className="text-[10px] text-slate-500 font-mono">Nivel de abono asignado vs real</span>
+                    <span className="text-[10px] text-emerald-400 font-mono animate-pulse">● Sincronizado en tiempo real</span>
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    {distributionMatrix.map((item, i) => (
-                      <div key={i} className="space-y-2 p-4 rounded-xl bg-black border border-white/[0.02] hover:border-white/[0.06] transition-all">
-                        <div className="flex justify-between items-center text-[10px] font-mono">
-                          <span className="text-slate-400 uppercase tracking-tight font-semibold">{item.item}</span>
-                          <span className="text-slate-350 font-bold">{Math.round(item.percentage)}%</span>
+                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    {/* Panel 1: Ranking de Egresos */}
+                    <div className="space-y-4 bg-black border border-white/[0.02] p-5 rounded-xl">
+                      <div className="flex justify-between items-center border-b border-white/[0.04] pb-2">
+                        <span className="text-[10px] text-slate-400 font-mono font-bold uppercase">Categorías de Mayor Consumo</span>
+                        <span className="text-[9px] text-slate-655 font-mono">Orden por gasto</span>
+                      </div>
+                      <div className="space-y-3 max-h-[280px] overflow-y-auto pr-1">
+                        {flowMetrics.sortedCats.length > 0 ? (
+                          flowMetrics.sortedCats.map((item, idx) => {
+                            const isTop = idx === 0;
+                            return (
+                              <div key={item.category} className={`space-y-1.5 p-2.5 rounded-lg transition-all border ${
+                                isTop ? "bg-white/[0.02] border-yellow-500/20" : "bg-transparent border-transparent"
+                              }`}>
+                                <div className="flex justify-between items-center text-[10px] font-mono">
+                                  <div className="flex items-center gap-1.5 min-w-0">
+                                    {isTop && <span className="text-yellow-400 text-[10px]">👑</span>}
+                                    <span className="text-slate-300 font-bold truncate">{item.category}</span>
+                                  </div>
+                                  <span className="text-slate-400 font-bold">{formatCOP(item.amount)}</span>
+                                </div>
+                                <div className="h-1 w-full bg-zinc-950 rounded-full overflow-hidden">
+                                  <div 
+                                    className={`h-full rounded-full ${isTop ? "bg-yellow-500" : "bg-blue-500"}`} 
+                                    style={{ width: `${(item.amount / (flowMetrics.totalExpenses + flowMetrics.totalReserves || 1)) * 100}%` }} 
+                                  />
+                                </div>
+                              </div>
+                            );
+                          })
+                        ) : (
+                          <div className="text-center py-8 text-xs font-mono text-slate-600">
+                            Sin egresos registrados
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Panel 2: Movimientos Mensuales */}
+                    <div className="space-y-4 bg-black border border-white/[0.02] p-5 rounded-xl flex flex-col justify-between">
+                      <div className="space-y-4">
+                        <div className="flex justify-between items-center border-b border-white/[0.04] pb-2">
+                          <span className="text-[10px] text-slate-400 font-mono font-bold uppercase">Resumen Mensual de Caja</span>
+                          <span className="text-[9px] text-slate-655 font-mono">Flujos</span>
                         </div>
-                        <div className="h-1.5 w-full bg-zinc-950 rounded-full overflow-hidden border border-white/[0.01]">
-                          <motion.div
-                            className="h-full bg-gradient-to-r from-blue-500 to-indigo-500"
-                            initial={{ width: 0 }}
-                            animate={{ width: `${item.percentage}%` }}
-                            transition={{ duration: 0.8 }}
-                          />
-                        </div>
-                        <div className="text-[9px] font-mono text-slate-550 flex justify-between">
-                          <span>Pagado: {formatCOP(item.paid)}</span>
-                          <span>Falta: {formatCOP(item.pending)}</span>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className="p-3 bg-[#050608] rounded-xl border border-white/[0.02]">
+                            <span className="text-[9px] text-slate-600 font-mono block">INGRESOS</span>
+                            <span className="text-xs font-bold font-mono text-emerald-400 mt-1 block">
+                              +{formatCOP(flowMetrics.totalIncomes)}
+                            </span>
+                          </div>
+                          <div className="p-3 bg-[#050608] rounded-xl border border-white/[0.02]">
+                            <span className="text-[9px] text-slate-600 font-mono block">EGRESOS</span>
+                            <span className="text-xs font-bold font-mono text-red-400 mt-1 block">
+                              -{formatCOP(flowMetrics.totalExpenses)}
+                            </span>
+                          </div>
+                          <div className="p-3 bg-[#050608] rounded-xl border border-white/[0.02]">
+                            <span className="text-[9px] text-slate-600 font-mono block">RESERVAS / AHORRO</span>
+                            <span className="text-xs font-bold font-mono text-blue-400 mt-1 block">
+                              {formatCOP(flowMetrics.totalReserves)}
+                            </span>
+                          </div>
+                          <div className="p-3 bg-[#050608] rounded-xl border border-white/[0.02]">
+                            <span className="text-[9px] text-slate-600 font-mono block">LIQUIDEZ NETO</span>
+                            <span className="text-xs font-bold font-mono text-white mt-1 block">
+                              {formatCOP(flowMetrics.totalIncomes - flowMetrics.totalExpenses - flowMetrics.totalReserves)}
+                            </span>
+                          </div>
                         </div>
                       </div>
-                    ))}
+
+                      {/* Small visual indicator */}
+                      <div className="space-y-1 pt-4 border-t border-white/[0.02] mt-auto">
+                        <div className="flex justify-between text-[9px] text-slate-500 font-mono">
+                          <span>Inflow vs Outflow</span>
+                          <span>Ratio: {flowMetrics.spendRatio.toFixed(1)}%</span>
+                        </div>
+                        <div className="h-1.5 w-full bg-zinc-950 rounded-full flex overflow-hidden">
+                          <div className="h-full bg-emerald-500" style={{ width: `${Math.max(0, 100 - flowMetrics.spendRatio)}%` }} />
+                          <div className="h-full bg-red-500" style={{ width: `${Math.min(100, flowMetrics.spendRatio)}%` }} />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Panel 3: Diagnóstico del Capital (AI style advice) */}
+                    <div className="space-y-4 bg-black border border-white/[0.02] p-5 rounded-xl flex flex-col justify-between">
+                      <div>
+                        <div className="flex justify-between items-center border-b border-white/[0.04] pb-2 mb-4">
+                          <span className="text-[10px] text-slate-400 font-mono font-bold uppercase">Diagnóstico Financiero</span>
+                          <span className="text-[9px] text-slate-655 font-mono">Análisis</span>
+                        </div>
+                        
+                        <div className="text-xs font-mono text-slate-300 leading-relaxed space-y-3">
+                          <p>
+                            Has ejecutado el <span className="text-emerald-400 font-bold">{flowMetrics.spendRatio.toFixed(1)}%</span> de tus ingresos mensuales en gastos directos.
+                          </p>
+                          {flowMetrics.topCategory ? (
+                            <p>
+                              Tu mayor centro de consumo es <span className="text-yellow-400 font-bold">{flowMetrics.topCategory.category}</span> con un gasto real de <span className="text-white font-bold">{formatCOP(flowMetrics.topCategory.amount)}</span>, lo cual representa el <span className="text-red-400 font-bold">{flowMetrics.topCategoryPercent.toFixed(1)}%</span> de tus egresos totales.
+                            </p>
+                          ) : (
+                            <p>No se han registrado consumos en categorías de gastos aún.</p>
+                          )}
+                          <p>
+                            El índice de ahorro y reserva se encuentra en el <span className="text-blue-400 font-bold">{flowMetrics.savingsRatio.toFixed(1)}%</span>, manteniendo una liquidez de caja neta disponible de <span className="text-emerald-400 font-bold">{formatCOP(flowMetrics.totalIncomes - flowMetrics.totalExpenses - flowMetrics.totalReserves)}</span>.
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="mt-4 p-2.5 rounded-lg bg-emerald-500/5 border border-emerald-500/10 text-[9px] font-mono text-emerald-400 leading-normal flex items-center gap-2">
+                        <span>⚡</span>
+                        <span>
+                          {flowMetrics.spendRatio > 70 
+                            ? "Alerta: Tu nivel de gasto supera el 70% de tus ingresos. Se sugiere restringir egresos variables."
+                            : "Estado: Salud de capital saludable. La distribución de caja y nivel de reservas se encuentran estables."
+                          }
+                        </span>
+                      </div>
+                    </div>
                   </div>
                 </div>
 
@@ -1532,26 +1739,50 @@ export default function TobiramaFinancialOS() {
                       <div className="space-y-2">
                         <span className="text-[9px] text-slate-500 uppercase tracking-widest font-mono block font-semibold">Categoría</span>
                         <div className="grid grid-cols-2 gap-2">
-                          {CATEGORIES.map((cat) => {
+                          {categoriesForSelection.map((cat) => {
                             const isSel = quickCategory === cat;
                             return (
                               <button
                                 key={cat}
                                 type="button"
-                                onClick={() => setQuickCategory(cat)}
+                                onClick={() => {
+                                  setQuickCategory(cat);
+                                  if (cat !== "Otra...") {
+                                    setCustomCategory("");
+                                  }
+                                }}
                                 className={`p-2.5 rounded-xl border flex items-center gap-2 text-left transition-all cursor-pointer ${
                                   isSel 
                                     ? "bg-white/[0.04] border-white/[0.12] text-white shadow-[0_0_15px_rgba(255,255,255,0.02)]" 
                                     : "bg-black border-white/[0.02] text-slate-500 hover:text-slate-350 hover:bg-[#090a0c]"
                                 }`}
                               >
-                                {getCategoryIcon(cat)}
+                                {cat === "Otra..." ? (
+                                  <Plus className="h-3.5 w-3.5 text-blue-400" />
+                                ) : (
+                                  getCategoryIcon(cat)
+                                )}
                                 <span className="text-[9px] font-bold font-mono tracking-tight">{cat}</span>
                               </button>
                             );
                           })}
                         </div>
                       </div>
+
+                      {/* Custom Category Input if "Otra..." is selected */}
+                      {quickCategory === "Otra..." && (
+                        <div className="space-y-1.5 animate-fadeIn">
+                          <span className="text-[9px] text-slate-500 uppercase tracking-widest font-mono block font-semibold">Nombre de la Nueva Categoría</span>
+                          <input
+                            type="text"
+                            placeholder="Nombre de la nueva categoría (Ej. Mascotas)"
+                            value={customCategory}
+                            onChange={(e) => setCustomCategory(e.target.value)}
+                            className="w-full px-4 py-3 rounded-2xl border border-white/[0.04] bg-[#090a0c]/60 text-xs text-slate-200 placeholder-slate-700 focus:border-white/[0.1] focus:bg-[#090a0c]/80 transition-all focus:outline-none"
+                            required
+                          />
+                        </div>
+                      )}
 
                       {/* Payment method segmented control */}
                       <div className="space-y-2">
@@ -1781,7 +2012,7 @@ export default function TobiramaFinancialOS() {
                               className="hover:bg-white/[0.01] transition-colors"
                             >
                               <td className="px-6 py-4.5">
-                                <span className={`px-2 py-0.5 rounded text-[10px] font-mono border ${CATEGORY_COLORS[item.category]}`}>
+                                <span className={`px-2 py-0.5 rounded text-[10px] font-mono border ${getCategoryColor(item.category)}`}>
                                   {item.category}
                                 </span>
                               </td>
