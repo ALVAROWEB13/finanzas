@@ -1,4 +1,3 @@
-process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
 import { Pool } from "pg";
 import fs from "fs";
 import path from "path";

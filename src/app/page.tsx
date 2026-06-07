@@ -111,9 +111,22 @@ export default function TobiramaFinancialOS() {
   // --- AUTHENTICATION STATE ---
   const [isAuthenticated, setIsAuthenticated] = useState(() => {
     if (typeof window !== "undefined") {
-      return localStorage.getItem("tobirama_auth") === "true" && !!localStorage.getItem("tobirama_user");
+      return (
+        localStorage.getItem("tobirama_auth") === "true" &&
+        !!localStorage.getItem("tobirama_user") &&
+        !!localStorage.getItem("tobirama_token")
+      );
     }
     return false;
+  });
+
+  // Helper: returns Authorization header with stored session token
+  const getAuthHeader = () => ({
+    "Authorization": `Bearer ${typeof window !== "undefined" ? localStorage.getItem("tobirama_token") || "" : ""}`
+  });
+  const getAuthHeaderJSON = () => ({
+    "Content-Type": "application/json",
+    "Authorization": `Bearer ${typeof window !== "undefined" ? localStorage.getItem("tobirama_token") || "" : ""}`
   });
   const [usernameInput, setUsernameInput] = useState("");
   const [passwordInput, setPasswordInput] = useState("");
@@ -198,9 +211,7 @@ export default function TobiramaFinancialOS() {
   // Real-time API synchronization helpers
   const fetchFromServer = async () => {
     try {
-      const headers = {
-        "x-user-id": typeof window !== "undefined" ? localStorage.getItem("tobirama_user") || "default" : "default"
-      };
+      const headers = getAuthHeader();
       const [txRes, budgetRes, creditsRes] = await Promise.all([
         fetch("/api/transactions", { headers }),
         fetch("/api/budget", { headers }),
@@ -492,25 +503,39 @@ export default function TobiramaFinancialOS() {
     };
   }, [transactions, selectedMonth]);
 
-  const handleLoginSubmit = (e: React.FormEvent) => {
+  const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!usernameInput.trim()) {
       setLoginError(true);
       return;
     }
-    if (passwordInput === "tobirama2026" || passwordInput === "1208") {
-      if (typeof window !== "undefined") {
-        localStorage.setItem("tobirama_auth", "true");
-        localStorage.setItem("tobirama_user", usernameInput.trim().toLowerCase());
+    try {
+      const res = await fetch("/api/auth", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          username: usernameInput.trim(),
+          password: passwordInput
+        })
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        if (typeof window !== "undefined") {
+          localStorage.setItem("tobirama_auth", "true");
+          localStorage.setItem("tobirama_user", data.userId);
+          localStorage.setItem("tobirama_token", data.token);
+        }
+        setIsAuthenticated(true);
+        setLoginError(false);
+        const now = new Date().toLocaleTimeString();
+        setTerminalLogs((prev) => [
+          ...prev,
+          `[${now}] SEGURIDAD: Usuario '${data.userId}' autenticado correctamente a través del Gateway seguro.`
+        ]);
+      } else {
+        setLoginError(true);
       }
-      setIsAuthenticated(true);
-      setLoginError(false);
-      const now = new Date().toLocaleTimeString();
-      setTerminalLogs((prev) => [
-        ...prev,
-        `[${now}] SEGURIDAD: Usuario '${usernameInput.trim().toLowerCase()}' autenticado correctamente a través del Gateway local.`
-      ]);
-    } else {
+    } catch {
       setLoginError(true);
     }
   };
@@ -559,10 +584,7 @@ export default function TobiramaFinancialOS() {
     }
 
     try {
-      const headers = {
-        "Content-Type": "application/json",
-        "x-user-id": typeof window !== "undefined" ? localStorage.getItem("tobirama_user") || "default" : "default"
-      };
+      const headers = getAuthHeaderJSON();
       // Update the budget item on database
       const budgetRes = await fetch("/api/budget", {
         method: "POST",
@@ -620,10 +642,7 @@ export default function TobiramaFinancialOS() {
     try {
       const res = await fetch("/api/budget", {
         method: "POST",
-        headers: { 
-          "Content-Type": "application/json",
-          "x-user-id": typeof window !== "undefined" ? localStorage.getItem("tobirama_user") || "default" : "default"
-        },
+        headers: getAuthHeaderJSON(),
         body: JSON.stringify({
           id: newItem.id,
           assigned: 0,
@@ -697,10 +716,7 @@ export default function TobiramaFinancialOS() {
     try {
       const res = await fetch("/api/transactions", {
         method: "POST",
-        headers: { 
-          "Content-Type": "application/json",
-          "x-user-id": typeof window !== "undefined" ? localStorage.getItem("tobirama_user") || "default" : "default"
-        },
+        headers: getAuthHeaderJSON(),
         body: JSON.stringify(newTx),
       });
       if (!res.ok) {
@@ -753,9 +769,7 @@ export default function TobiramaFinancialOS() {
     try {
       const res = await fetch(`/api/transactions?id=${id}`, {
         method: "DELETE",
-        headers: {
-          "x-user-id": typeof window !== "undefined" ? localStorage.getItem("tobirama_user") || "default" : "default"
-        }
+        headers: getAuthHeader()
       });
       if (!res.ok) {
         throw new Error("Failed to delete transaction on DB");
@@ -787,9 +801,7 @@ export default function TobiramaFinancialOS() {
     try {
       const res = await fetch(`/api/budget?id=${id}`, {
         method: "DELETE",
-        headers: {
-          "x-user-id": typeof window !== "undefined" ? localStorage.getItem("tobirama_user") || "default" : "default"
-        }
+        headers: getAuthHeader()
       });
       if (!res.ok) {
         throw new Error("Failed to delete budget item on DB");
@@ -841,9 +853,7 @@ export default function TobiramaFinancialOS() {
           try {
             await fetch(`/api/transactions?id=${txToDelete.id}`, { 
               method: "DELETE",
-              headers: {
-                "x-user-id": typeof window !== "undefined" ? localStorage.getItem("tobirama_user") || "default" : "default"
-              }
+              headers: getAuthHeader()
             });
             fetchFromServer();
           } catch (err) {
@@ -884,10 +894,7 @@ export default function TobiramaFinancialOS() {
         try {
           await fetch("/api/transactions", {
             method: "POST",
-            headers: { 
-              "Content-Type": "application/json",
-              "x-user-id": typeof window !== "undefined" ? localStorage.getItem("tobirama_user") || "default" : "default"
-            },
+            headers: getAuthHeaderJSON(),
             body: JSON.stringify(newTx),
           });
           fetchFromServer();
@@ -932,10 +939,7 @@ export default function TobiramaFinancialOS() {
     }
 
     try {
-      const headers = {
-        "Content-Type": "application/json",
-        "x-user-id": typeof window !== "undefined" ? localStorage.getItem("tobirama_user") || "default" : "default"
-      };
+      const headers = getAuthHeaderJSON();
       await fetch("/api/budget", {
         method: "POST",
         headers,
@@ -975,9 +979,7 @@ export default function TobiramaFinancialOS() {
     try {
       const res = await fetch("/api/reset", {
         method: "POST",
-        headers: {
-          "x-user-id": typeof window !== "undefined" ? localStorage.getItem("tobirama_user") || "default" : "default"
-        }
+        headers: getAuthHeader()
       });
       if (!res.ok) {
         throw new Error("Failed to reset DB on server");
@@ -1040,10 +1042,7 @@ export default function TobiramaFinancialOS() {
     try {
       const res = await fetch("/api/credits", {
         method: "POST",
-        headers: { 
-          "Content-Type": "application/json",
-          "x-user-id": typeof window !== "undefined" ? localStorage.getItem("tobirama_user") || "default" : "default"
-        },
+        headers: getAuthHeaderJSON(),
         body: JSON.stringify(newCredit)
       });
       if (!res.ok) {
@@ -1073,9 +1072,7 @@ export default function TobiramaFinancialOS() {
     try {
       const res = await fetch(`/api/credits?id=${id}`, {
         method: "DELETE",
-        headers: {
-          "x-user-id": typeof window !== "undefined" ? localStorage.getItem("tobirama_user") || "default" : "default"
-        }
+        headers: getAuthHeader()
       });
       if (!res.ok) {
         throw new Error("Failed to delete credit on server");
@@ -1264,22 +1261,8 @@ export default function TobiramaFinancialOS() {
       newLogs.push("  /clear   - Limpia los registros de la consola virtual.");
       newLogs.push("  /reset   - Restablece el OS financiero a su estado de fábrica.");
     } else if (cmd === "/reset") {
-      setBudgetItems([
-        { id: "b1", category: "Vivienda", item: "Cuota Tamarindo", assigned: 1427000, paid: 1427000, isFixed: true },
-        { id: "b2", category: "Deudas de Consumo", item: "ADDI / Crédito", assigned: 2029023, paid: 2029023, isFixed: true },
-        { id: "b3", category: "Tarjetas de Crédito", item: "Cupo Utilizado", assigned: 0, paid: 0, isFixed: true },
-        { id: "b4", category: "Gastos Fijos", item: "Apoyo Madre & Internet", assigned: 650000, paid: 650000, isFixed: true },
-        { id: "b5", category: "Ahorro / Reserva", item: "Fondo Nu / Lulo", assigned: 587029, paid: 587029, isFixed: false },
-        { id: "b6", category: "Estilo de Vida / Mercado", item: "Gastos Mensuales", assigned: 600000, paid: 0, isFixed: false },
-      ]);
-      setTransactions([
-        { id: "t1", date: "2026-06-01", description: "Ingreso Nómina Base", type: "Ingreso", paymentMethod: "Débito", category: "Gastos Fijos", amount: 5976687, isFixed: true },
-        { id: "t2", date: "2026-06-02", description: "Pago Cuota Tamarindo Jaramillo Mora", type: "Gasto Extra", paymentMethod: "Débito", category: "Vivienda", amount: 1427000, isFixed: true },
-        { id: "t3", date: "2026-06-02", description: "Liquidación Crédito ADDI", type: "Gasto Extra", paymentMethod: "Débito", category: "Deudas de Consumo", amount: 2029023, isFixed: true },
-        { id: "t4", date: "2026-06-03", description: "Fondo Nu / Lulo (Ahorro)", type: "Movimiento a Reserva", paymentMethod: "Débito", category: "Ahorro / Reserva", amount: 587029, isFixed: false },
-        { id: "t5", date: "2026-06-03", description: "Servicios e Internet & Apoyo Familiar", type: "Gasto Extra", paymentMethod: "Débito", category: "Gastos Fijos", amount: 650000, isFixed: true },
-      ]);
-      newLogs.push(`[${timeStr}] SYSTEM: Reinicio de base de datos completado.`);
+      newLogs.push(`[${timeStr}] TERMINAL: Para restablecer la base de datos usa el panel de Mantenimiento.`);
+      newLogs.push(`[${timeStr}] TERMINAL: Navega a la pestaña Auditoría > Mantenimiento y presiona el botón de reset.`);
     } else {
       newLogs.push(`[${timeStr}] ERROR: Comando '${cmd}' no reconocido. Escribe /help para ayuda.`);
     }

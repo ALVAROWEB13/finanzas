@@ -1,8 +1,16 @@
-process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
 import { NextResponse } from "next/server";
 import { Pool } from "pg";
+import { authenticateRequest } from "@/lib/auth";
 
-export async function GET() {
+export async function GET(req: Request) {
+  // Completely disabled in production for security
+  if (process.env.NODE_ENV === "production") {
+    return NextResponse.json({ error: "No disponible en producción" }, { status: 403 });
+  }
+
+  const auth = authenticateRequest(req);
+  if (!auth) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+
   const connectionString = 
     process.env.DATABASE_URL || 
     process.env.POSTGRES_URL || 
