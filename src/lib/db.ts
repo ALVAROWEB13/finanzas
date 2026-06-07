@@ -231,7 +231,7 @@ export const addTransaction = async (tx: Transaction, userId: string): Promise<v
     // Insert transaction
     await pgPool.query(
       "INSERT INTO transactions (id, date, description, type, payment_method, category, amount, is_fixed, user_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
-      [tx.id, tx.date, tx.description, tx.type, tx.paymentMethod, tx.category, tx.amount, tx.isFixed, userId]
+      [tx.id, tx.date, tx.description, tx.type, tx.paymentMethod, tx.category, tx.amount, tx.isFixed ?? false, userId]
     );
 
     // Update paid amount in budget items if it's an expense
@@ -253,7 +253,7 @@ export const addTransaction = async (tx: Transaction, userId: string): Promise<v
       } else {
         await pgPool.query(
           "INSERT INTO budget_items (id, category, item, assigned, paid, is_fixed, user_id) VALUES ($1, $2, $3, $4, $5, $6, $7)",
-          [`b-${Date.now()}`, tx.category, tx.category, tx.amount, tx.amount, tx.isFixed, userId]
+          [`b-${Date.now()}`, tx.category, tx.category, tx.amount, tx.amount, tx.isFixed ?? false, userId]
         );
       }
 
@@ -413,14 +413,14 @@ export const updateBudgetItem = async (
     if (exists) {
       await pgPool.query(
         "UPDATE budget_items SET assigned = $1, paid = $2, is_fixed = $3 WHERE id = $4 AND user_id = $5",
-        [assigned, paid, isFixed, id, userId]
+        [assigned, paid, isFixed ?? false, id, userId]
       );
     } else {
       const finalCategory = category || "Otros";
       const finalItem = item || finalCategory;
       await pgPool.query(
         "INSERT INTO budget_items (id, category, item, assigned, paid, is_fixed, user_id) VALUES ($1, $2, $3, $4, $5, $6, $7)",
-        [id, finalCategory, finalItem, assigned, paid, isFixed, userId]
+        [id, finalCategory, finalItem, assigned, paid, isFixed ?? false, userId]
       );
     }
   } else {
