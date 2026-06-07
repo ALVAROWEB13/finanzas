@@ -110,21 +110,35 @@ const formatNumberCOP = (value: number): string => {
   }).format(value);
 };
 
+const formatOnFocusCOP = (val: string | number): string => {
+  const num = typeof val === "number" ? val : parseFormattedCOP(val);
+  if (num === 0) return "0";
+  if (num % 1 === 0) {
+    return new Intl.NumberFormat("es-CO", { maximumFractionDigits: 0 }).format(num);
+  }
+  return new Intl.NumberFormat("es-CO", { minimumFractionDigits: 1, maximumFractionDigits: 2 }).format(num);
+};
+
 const formatAsYouTypeCOP = (val: string): string => {
-  let clean = val.replace(/[^0-9.,-]/g, "");
+  if (!val) return "";
   
-  let firstSepIdx = clean.search(/[.,]/);
-  if (firstSepIdx !== -1) {
-    let beforeSep = clean.substring(0, firstSepIdx);
-    let afterSep = clean.substring(firstSepIdx + 1).replace(/[.,]/g, "");
-    clean = beforeSep + "," + afterSep;
+  let normalized = val;
+  if (normalized.endsWith(".")) {
+    normalized = normalized.slice(0, -1) + ",";
   }
   
+  let clean = normalized.replace(/[^0-9,-]/g, "");
+  
   let parts = clean.split(",");
+  if (parts.length > 2) {
+    clean = parts[0] + "," + parts.slice(1).join("");
+    parts = clean.split(",");
+  }
+  
   let integerPart = parts[0];
   let decimalPart = parts.length > 1 ? parts[1] : null;
   
-  let rawInt = integerPart.replace(/\./g, "");
+  let rawInt = integerPart.replace(/[^0-9-]/g, "");
   let formattedInt = "";
   
   let isNegative = false;
@@ -132,8 +146,6 @@ const formatAsYouTypeCOP = (val: string): string => {
     isNegative = true;
     rawInt = rawInt.substring(1);
   }
-  
-  rawInt = rawInt.replace(/[^0-9]/g, "");
   
   if (rawInt) {
     const num = parseInt(rawInt, 10);
@@ -191,6 +203,14 @@ const handleFormattedBlur = (
   }
   const num = parseFormattedCOP(val);
   setter(formatNumberCOP(num));
+};
+
+const handleFormattedFocus = (
+  val: string,
+  setter: (val: string) => void
+) => {
+  if (!val) return;
+  setter(formatOnFocusCOP(val));
 };
 
 const getCategoryIcon = (cat: string) => {
@@ -640,8 +660,8 @@ export default function TobiramaFinancialOS() {
 
   const handleEditBudget = (item: BudgetItem) => {
     setEditingItem(item);
-    setEditPaidValue(formatNumberCOP(item.paid));
-    setEditAssignedValue(formatNumberCOP(item.assigned));
+    setEditPaidValue(formatOnFocusCOP(item.paid));
+    setEditAssignedValue(formatOnFocusCOP(item.assigned));
     setEditIsFixed(item.isFixed ?? false);
   };
 
@@ -2330,6 +2350,7 @@ export default function TobiramaFinancialOS() {
                             inputMode="decimal"
                             value={quickAmount === "0,00" ? "" : quickAmount}
                             onChange={(e) => handleFormattedChange(e, setQuickAmount)}
+                            onFocus={() => handleFormattedFocus(quickAmount, setQuickAmount)}
                             onBlur={() => handleFormattedBlur(quickAmount, setQuickAmount)}
                             className="w-full bg-transparent border-0 p-0 text-xl font-bold font-mono text-slate-100 placeholder-slate-700 focus:outline-none focus:ring-0 leading-none"
                             placeholder="0,00"
@@ -2993,6 +3014,7 @@ export default function TobiramaFinancialOS() {
                       inputMode="decimal"
                       value={editAssignedValue}
                       onChange={(e) => handleFormattedChange(e, setEditAssignedValue)}
+                      onFocus={() => handleFormattedFocus(editAssignedValue, setEditAssignedValue)}
                       onBlur={() => handleFormattedBlur(editAssignedValue, setEditAssignedValue)}
                       className="w-full pl-8 pr-4 py-2.5 rounded-xl border border-white/[0.06] bg-black text-sm font-mono text-slate-200 focus:border-white/[0.15] focus:outline-none"
                     />
@@ -3008,6 +3030,7 @@ export default function TobiramaFinancialOS() {
                       inputMode="decimal"
                       value={editPaidValue}
                       onChange={(e) => handleFormattedChange(e, setEditPaidValue)}
+                      onFocus={() => handleFormattedFocus(editPaidValue, setEditPaidValue)}
                       onBlur={() => handleFormattedBlur(editPaidValue, setEditPaidValue)}
                       className="w-full pl-8 pr-4 py-2.5 rounded-xl border border-white/[0.06] bg-[#050608] text-sm font-mono text-slate-200 focus:border-white/[0.15] focus:outline-none"
                     />
@@ -3122,6 +3145,7 @@ export default function TobiramaFinancialOS() {
                         placeholder="3.000.000,00"
                         value={creditForm.totalAmount}
                         onChange={(e) => handleFormattedChange(e, (formatted) => setCreditForm(prev => ({ ...prev, totalAmount: formatted })))}
+                        onFocus={() => handleFormattedFocus(creditForm.totalAmount, (formatted) => setCreditForm(prev => ({ ...prev, totalAmount: formatted })))}
                         onBlur={() => handleFormattedBlur(creditForm.totalAmount, (formatted) => setCreditForm(prev => ({ ...prev, totalAmount: formatted })))}
                         className="w-full pl-7 pr-3 py-2.5 rounded-xl border border-white/[0.06] bg-[#050608] text-sm font-mono text-slate-200 placeholder-slate-700 focus:border-white/[0.15] focus:outline-none"
                       />
@@ -3139,6 +3163,7 @@ export default function TobiramaFinancialOS() {
                         placeholder="1.200.000,00"
                         value={creditForm.remainingAmount}
                         onChange={(e) => handleFormattedChange(e, (formatted) => setCreditForm(prev => ({ ...prev, remainingAmount: formatted })))}
+                        onFocus={() => handleFormattedFocus(creditForm.remainingAmount, (formatted) => setCreditForm(prev => ({ ...prev, remainingAmount: formatted })))}
                         onBlur={() => handleFormattedBlur(creditForm.remainingAmount, (formatted) => setCreditForm(prev => ({ ...prev, remainingAmount: formatted })))}
                         className="w-full pl-7 pr-3 py-2.5 rounded-xl border border-white/[0.06] bg-[#050608] text-sm font-mono text-slate-200 placeholder-slate-700 focus:border-white/[0.15] focus:outline-none"
                       />
@@ -3182,6 +3207,7 @@ export default function TobiramaFinancialOS() {
                         placeholder="300.000,00"
                         value={creditForm.monthlyPayment}
                         onChange={(e) => handleFormattedChange(e, (formatted) => setCreditForm(prev => ({ ...prev, monthlyPayment: formatted })))}
+                        onFocus={() => handleFormattedFocus(creditForm.monthlyPayment, (formatted) => setCreditForm(prev => ({ ...prev, monthlyPayment: formatted })))}
                         onBlur={() => handleFormattedBlur(creditForm.monthlyPayment, (formatted) => setCreditForm(prev => ({ ...prev, monthlyPayment: formatted })))}
                         className="w-full pl-6 pr-2 py-2.5 rounded-xl border border-white/[0.06] bg-[#050608] text-sm font-mono text-slate-200 placeholder-slate-700 focus:border-white/[0.15] focus:outline-none"
                       />
