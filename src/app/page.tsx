@@ -400,21 +400,29 @@ export default function TobiramaFinancialOS() {
     return pocketLiquidity + savingsAmount;
   }, [pocketLiquidity, transactions]);
 
-  // Deuda Erradicada
+  // Deuda Erradicada (Including Credits & Budget Debts)
   const debtMetrics = useMemo(() => {
     const targetCategories: Category[] = ["Deudas de Consumo", "Tarjetas de Crédito"];
-    const debtItems = monthlyBudgetItems.filter((item) => targetCategories.includes(item.category));
-    const totalAssigned = debtItems.reduce((sum, item) => sum + item.assigned, 0);
-    const totalPaid = debtItems.reduce((sum, item) => sum + item.paid, 0);
+    const debtItems = monthlyBudgetItems.filter((item) => targetCategories.includes(item.category) && !(item as any).isCredit);
+    const budgetAssigned = debtItems.reduce((sum, item) => sum + item.assigned, 0);
+    const budgetPaid = debtItems.reduce((sum, item) => sum + item.paid, 0);
 
-    const percentage = totalAssigned > 0 ? (totalPaid / totalAssigned) * 100 : 100;
+    const creditsTotal = credits.reduce((sum, c) => sum + c.totalAmount, 0);
+    const creditsRemaining = credits.reduce((sum, c) => sum + c.remainingAmount, 0);
+    const creditsPaid = Math.max(0, creditsTotal - creditsRemaining);
+
+    const totalOriginalDebt = budgetAssigned + creditsTotal;
+    const totalRemainingDebt = Math.max(0, (budgetAssigned - budgetPaid) + creditsRemaining);
+    const totalPaidDebt = Math.max(0, totalOriginalDebt - totalRemainingDebt);
+
+    const percentage = totalOriginalDebt > 0 ? (totalPaidDebt / totalOriginalDebt) * 100 : 100;
     return {
       percentage,
-      totalAssigned,
-      totalPaid,
-      totalPending: Math.max(0, totalAssigned - totalPaid),
+      totalAssigned: totalOriginalDebt,
+      totalPaid: totalPaidDebt,
+      totalPending: totalRemainingDebt,
     };
-  }, [monthlyBudgetItems]);
+  }, [monthlyBudgetItems, credits]);
 
   // Burn Rate mensual (gasto acumulado real de compromisos pagados)
   const monthlyBurn = useMemo(() => {
@@ -1995,6 +2003,17 @@ export default function TobiramaFinancialOS() {
                           ? (debtPaid / credit.totalAmount) * 100 
                           : 0;
 
+                        const remainingInstallments = Math.max(0, credit.totalInstallments - credit.paidInstallments);
+                        let projectedEndMonthStr = "N/A";
+                        if (remainingInstallments === 0) {
+                          projectedEndMonthStr = "¡CANCELADO!";
+                        } else if (selectedMonth) {
+                          const [year, month] = selectedMonth.split("-").map(Number);
+                          const date = new Date(year, month - 1 + remainingInstallments, 1);
+                          const monthsSpanish = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
+                          projectedEndMonthStr = `${monthsSpanish[date.getMonth()]} ${date.getFullYear()}`;
+                        }
+
                         return (
                           <div 
                             key={credit.id} 
@@ -2028,7 +2047,7 @@ export default function TobiramaFinancialOS() {
                                 <div 
                                   className="h-full bg-gradient-to-r from-blue-500 to-cyan-400 rounded-full" 
                                   style={{ width: `${Math.min(100, Math.max(0, cuotasPercent))}%` }}
-                                />
+                               />
                               </div>
                             </div>
 
@@ -2050,9 +2069,17 @@ export default function TobiramaFinancialOS() {
                               </div>
                             </div>
 
-                            <div className="pt-2.5 border-t border-white/[0.02] flex justify-between items-center text-[9px] font-mono">
-                              <span className="text-slate-500">PAGO MENSUAL</span>
-                              <span className="text-slate-200 font-bold">{formatCOP(credit.monthlyPayment)}</span>
+                            <div className="pt-2.5 border-t border-white/[0.02] flex flex-col gap-1.5 text-[9px] font-mono">
+                              <div className="flex justify-between items-center">
+                                <span className="text-slate-500">PAGO MENSUAL</span>
+                                <span className="text-slate-200 font-bold">{formatCOP(credit.monthlyPayment)}</span>
+                              </div>
+                              <div className="flex justify-between items-center">
+                                <span className="text-slate-500">PROYECCIÓN DE CANCELACIÓN</span>
+                                <span className={`font-bold ${remainingInstallments === 0 ? "text-emerald-400" : "text-purple-400"}`}>
+                                  {projectedEndMonthStr}
+                                </span>
+                              </div>
                             </div>
                           </div>
                         );
