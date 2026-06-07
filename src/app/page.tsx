@@ -95,6 +95,104 @@ const formatCOP = (value: number): string => {
   }).format(value);
 };
 
+// --- COP FORMATTING AND PARSING UTILITIES FOR INPUTS ---
+const parseFormattedCOP = (val: string): number => {
+  if (!val) return 0;
+  let clean = val.replace(/[^0-9.,-]/g, "");
+  clean = clean.replace(/\./g, "").replace(",", ".");
+  return parseFloat(clean) || 0;
+};
+
+const formatNumberCOP = (value: number): string => {
+  return new Intl.NumberFormat("es-CO", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(value);
+};
+
+const formatAsYouTypeCOP = (val: string): string => {
+  let clean = val.replace(/[^0-9.,-]/g, "");
+  
+  let firstSepIdx = clean.search(/[.,]/);
+  if (firstSepIdx !== -1) {
+    let beforeSep = clean.substring(0, firstSepIdx);
+    let afterSep = clean.substring(firstSepIdx + 1).replace(/[.,]/g, "");
+    clean = beforeSep + "," + afterSep;
+  }
+  
+  let parts = clean.split(",");
+  let integerPart = parts[0];
+  let decimalPart = parts.length > 1 ? parts[1] : null;
+  
+  let rawInt = integerPart.replace(/\./g, "");
+  let formattedInt = "";
+  
+  let isNegative = false;
+  if (rawInt.startsWith("-")) {
+    isNegative = true;
+    rawInt = rawInt.substring(1);
+  }
+  
+  rawInt = rawInt.replace(/[^0-9]/g, "");
+  
+  if (rawInt) {
+    const num = parseInt(rawInt, 10);
+    formattedInt = new Intl.NumberFormat("es-CO", { maximumFractionDigits: 0 }).format(num);
+    if (isNegative) {
+      formattedInt = "-" + formattedInt;
+    }
+  } else if (isNegative) {
+    formattedInt = "-";
+  }
+  
+  if (decimalPart !== null) {
+    return formattedInt + "," + decimalPart.substring(0, 2);
+  }
+  return formattedInt;
+};
+
+const handleFormattedChange = (
+  e: React.ChangeEvent<HTMLInputElement>,
+  setter: (val: string) => void
+) => {
+  const input = e.target;
+  const originalValue = input.value;
+  const selectionStart = input.selectionStart || 0;
+  
+  const formattedValue = formatAsYouTypeCOP(originalValue);
+  const digitsBeforeCursor = originalValue.slice(0, selectionStart).replace(/[^0-9-]/g, "").length;
+  
+  setter(formattedValue);
+  
+  setTimeout(() => {
+    let newCursorPos = 0;
+    let digitCount = 0;
+    for (let i = 0; i < formattedValue.length; i++) {
+      if (/[0-9-]/.test(formattedValue[i])) {
+        digitCount++;
+      }
+      if (digitCount <= digitsBeforeCursor) {
+        newCursorPos = i + 1;
+      } else {
+        break;
+      }
+    }
+    input.setSelectionRange(newCursorPos, newCursorPos);
+  }, 0);
+};
+
+const handleFormattedBlur = (
+  val: string,
+  setter: (val: string) => void
+) => {
+  if (!val) {
+    setter("");
+    return;
+  }
+  const num = parseFormattedCOP(val);
+  setter(formatNumberCOP(num));
+};
+
 const getCategoryIcon = (cat: string) => {
   const c = cat.toLowerCase();
   if (c.includes("vivienda")) return <Building2 className="h-3.5 w-3.5 text-yellow-400" />;
@@ -165,7 +263,7 @@ export default function TobiramaFinancialOS() {
 
   // --- QUICK REGISTRATION FORM STATE (Optimized to match screen 2) ---
   const [inputMode, setInputMode] = useState<"keypad" | "voice" | "invoice">("keypad");
-  const [quickAmount, setQuickAmount] = useState("0");
+  const [quickAmount, setQuickAmount] = useState("0,00");
   const [quickCategory, setQuickCategory] = useState<Category>("Vivienda");
   const [customCategory, setCustomCategory] = useState("");
   const [quickMethod, setQuickMethod] = useState<PaymentMethod>("Débito");
@@ -542,16 +640,16 @@ export default function TobiramaFinancialOS() {
 
   const handleEditBudget = (item: BudgetItem) => {
     setEditingItem(item);
-    setEditPaidValue(item.paid.toString());
-    setEditAssignedValue(item.assigned.toString());
+    setEditPaidValue(formatNumberCOP(item.paid));
+    setEditAssignedValue(formatNumberCOP(item.assigned));
     setEditIsFixed(item.isFixed ?? false);
   };
 
   const saveBudgetEdit = async () => {
     if (!editingItem) return;
 
-    const newPaid = parseFloat(editPaidValue) || 0;
-    const newAssigned = parseFloat(editAssignedValue) || 0;
+    const newPaid = parseFormattedCOP(editPaidValue) || 0;
+    const newAssigned = parseFormattedCOP(editAssignedValue) || 0;
 
     // Optimistically update budget items locally
     setBudgetItems((prev) =>
@@ -664,7 +762,7 @@ export default function TobiramaFinancialOS() {
   // Quick register transaction form submission (Vista C - Screen 2 style)
   const handleQuickRegister = async (e: React.FormEvent) => {
     e.preventDefault();
-    const amountVal = parseFloat(quickAmount) || 0;
+    const amountVal = parseFormattedCOP(quickAmount) || 0;
     if (amountVal <= 0) return;
 
     const finalCategory = quickCategory === "Otra..." ? (customCategory.trim() || "Otros") : quickCategory;
@@ -734,7 +832,7 @@ export default function TobiramaFinancialOS() {
     ]);
 
     setQuickSuccessMsg(true);
-    setQuickAmount("0");
+    setQuickAmount("0,00");
     setQuickDescription("");
     setCustomCategory("");
     if (quickCategory === "Otra...") {
@@ -1000,9 +1098,9 @@ export default function TobiramaFinancialOS() {
 
   const handleAddCreditSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const totalAmt = parseFloat(creditForm.totalAmount) || 0;
-    const remainingAmt = parseFloat(creditForm.remainingAmount) || 0;
-    const monthlyPay = parseFloat(creditForm.monthlyPayment) || 0;
+    const totalAmt = parseFormattedCOP(creditForm.totalAmount) || 0;
+    const remainingAmt = parseFormattedCOP(creditForm.remainingAmount) || 0;
+    const monthlyPay = parseFormattedCOP(creditForm.monthlyPayment) || 0;
     const totalInst = parseInt(creditForm.totalInstallments) || 0;
     const paidInst = parseInt(creditForm.paidInstallments) || 0;
     const categoryVal = creditForm.category.trim();
@@ -1199,7 +1297,7 @@ export default function TobiramaFinancialOS() {
     }
 
     if (parsedAmount > 0) {
-      setQuickAmount(parsedAmount.toString());
+      setQuickAmount(formatNumberCOP(parsedAmount));
       setQuickCategory(category);
       setQuickMethod(method);
       setQuickType(type);
@@ -1229,7 +1327,7 @@ export default function TobiramaFinancialOS() {
           method: "Débito" as PaymentMethod
         };
         
-        setQuickAmount(mockInvoice.amount.toString());
+        setQuickAmount(formatNumberCOP(mockInvoice.amount));
         setQuickDescription(mockInvoice.description);
         setQuickCategory(mockInvoice.category);
         setQuickMethod(mockInvoice.method);
@@ -1273,15 +1371,24 @@ export default function TobiramaFinancialOS() {
 
   const handleDigitPress = (digit: string) => {
     setQuickAmount((prev) => {
-      if (prev === "0") return digit;
-      return prev + digit;
+      let raw = prev.replace(/[^0-9]/g, "");
+      if (raw === "0") {
+        raw = digit;
+      } else {
+        raw = raw + digit;
+      }
+      const num = parseInt(raw, 10) || 0;
+      return formatNumberCOP(num);
     });
   };
 
   const handleBackspace = () => {
     setQuickAmount((prev) => {
-      if (prev.length <= 1) return "0";
-      return prev.slice(0, -1);
+      let raw = prev.replace(/[^0-9]/g, "");
+      if (raw.length <= 1) return "0,00";
+      raw = raw.slice(0, -1);
+      const num = parseInt(raw, 10) || 0;
+      return formatNumberCOP(num);
     });
   };
 
@@ -2221,19 +2328,11 @@ export default function TobiramaFinancialOS() {
                           <input
                             type="text"
                             inputMode="decimal"
-                            step="any"
-                            value={quickAmount === "0" ? "" : quickAmount}
-                            onChange={(e) => {
-                              let cleanVal = e.target.value.replace(",", ".");
-                              cleanVal = cleanVal.replace(/[^0-9.]/g, "");
-                              const parts = cleanVal.split(".");
-                              if (parts.length > 2) {
-                                cleanVal = parts[0] + "." + parts.slice(1).join("");
-                              }
-                              setQuickAmount(cleanVal || "0");
-                            }}
+                            value={quickAmount === "0,00" ? "" : quickAmount}
+                            onChange={(e) => handleFormattedChange(e, setQuickAmount)}
+                            onBlur={() => handleFormattedBlur(quickAmount, setQuickAmount)}
                             className="w-full bg-transparent border-0 p-0 text-xl font-bold font-mono text-slate-100 placeholder-slate-700 focus:outline-none focus:ring-0 leading-none"
-                            placeholder="0"
+                            placeholder="0,00"
                           />
 
                           {isScanning && (
@@ -2274,8 +2373,8 @@ export default function TobiramaFinancialOS() {
                                 type="button"
                                 onClick={() => {
                                   setQuickAmount((prev) => {
-                                    const current = parseFloat(prev) || 0;
-                                    return (current + pill.value).toString();
+                                    const current = parseFormattedCOP(prev);
+                                    return formatNumberCOP(current + pill.value);
                                   });
                                 }}
                                 className="flex-1 py-1.5 rounded-lg bg-[#090a0c] border border-white/[0.02] hover:border-white/[0.08] text-[10px] font-mono text-slate-500 hover:text-white transition-all cursor-pointer"
@@ -2324,7 +2423,7 @@ export default function TobiramaFinancialOS() {
                             })}
                             <button
                               type="button"
-                              onClick={() => setQuickAmount("0")}
+                              onClick={() => setQuickAmount("0,00")}
                               className="col-span-4 py-1.5 text-[9px] font-mono text-slate-600 hover:text-slate-400 transition-colors uppercase tracking-widest cursor-pointer"
                             >
                               Limpiar Teclado
@@ -2549,9 +2648,9 @@ export default function TobiramaFinancialOS() {
                       {/* Large Glowing Confirm Button */}
                       <button
                         onClick={handleQuickRegister}
-                        disabled={parseFloat(quickAmount) === 0 || isScanning}
+                        disabled={parseFormattedCOP(quickAmount) === 0 || isScanning}
                         className={`w-full py-3.5 rounded-2xl bg-gradient-to-r from-emerald-500 to-green-400 hover:from-emerald-400 hover:to-green-300 text-black font-bold tracking-widest uppercase text-xs shadow-lg shadow-emerald-500/5 transition-all active:scale-[0.99] flex items-center justify-center gap-1.5 cursor-pointer ${
-                          parseFloat(quickAmount) === 0 || isScanning ? "opacity-35 pointer-events-none" : ""
+                          parseFormattedCOP(quickAmount) === 0 || isScanning ? "opacity-35 pointer-events-none" : ""
                         }`}
                       >
                         Confirmar Transacción ⚡
@@ -2566,7 +2665,7 @@ export default function TobiramaFinancialOS() {
                       <button
                         type="button"
                         onClick={() => {
-                          setQuickAmount("0");
+                          setQuickAmount("0,00");
                           setQuickDescription("");
                         }}
                         className="text-center font-mono text-[9px] text-slate-600 hover:text-slate-400 block w-full uppercase tracking-wider cursor-pointer"
@@ -2890,11 +2989,12 @@ export default function TobiramaFinancialOS() {
                   <div className="relative">
                     <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 font-mono">$</span>
                     <input
-                      type="number"
-                      step="any"
+                      type="text"
+                      inputMode="decimal"
                       value={editAssignedValue}
-                      onChange={(e) => setEditAssignedValue(e.target.value)}
-                      className="w-full pl-8 pr-4 py-2.5 rounded-xl border border-white/[0.06] bg-black text-sm font-mono text-slate-200 focus:border-white/[0.15]"
+                      onChange={(e) => handleFormattedChange(e, setEditAssignedValue)}
+                      onBlur={() => handleFormattedBlur(editAssignedValue, setEditAssignedValue)}
+                      className="w-full pl-8 pr-4 py-2.5 rounded-xl border border-white/[0.06] bg-black text-sm font-mono text-slate-200 focus:border-white/[0.15] focus:outline-none"
                     />
                   </div>
                 </div>
@@ -2904,11 +3004,12 @@ export default function TobiramaFinancialOS() {
                   <div className="relative">
                     <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 font-mono">$</span>
                     <input
-                      type="number"
-                      step="any"
+                      type="text"
+                      inputMode="decimal"
                       value={editPaidValue}
-                      onChange={(e) => setEditPaidValue(e.target.value)}
-                      className="w-full pl-8 pr-4 py-2.5 rounded-xl border border-white/[0.06] bg-black text-sm font-mono text-slate-200 focus:border-blue-500/50"
+                      onChange={(e) => handleFormattedChange(e, setEditPaidValue)}
+                      onBlur={() => handleFormattedBlur(editPaidValue, setEditPaidValue)}
+                      className="w-full pl-8 pr-4 py-2.5 rounded-xl border border-white/[0.06] bg-[#050608] text-sm font-mono text-slate-200 focus:border-white/[0.15] focus:outline-none"
                     />
                   </div>
                 </div>
@@ -3015,12 +3116,13 @@ export default function TobiramaFinancialOS() {
                     <div className="relative">
                       <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 font-mono text-xs">$</span>
                       <input
-                        type="number"
-                        step="any"
+                        type="text"
+                        inputMode="decimal"
                         required
-                        placeholder="3000000"
+                        placeholder="3.000.000,00"
                         value={creditForm.totalAmount}
-                        onChange={(e) => setCreditForm({ ...creditForm, totalAmount: e.target.value })}
+                        onChange={(e) => handleFormattedChange(e, (formatted) => setCreditForm(prev => ({ ...prev, totalAmount: formatted })))}
+                        onBlur={() => handleFormattedBlur(creditForm.totalAmount, (formatted) => setCreditForm(prev => ({ ...prev, totalAmount: formatted })))}
                         className="w-full pl-7 pr-3 py-2.5 rounded-xl border border-white/[0.06] bg-[#050608] text-sm font-mono text-slate-200 placeholder-slate-700 focus:border-white/[0.15] focus:outline-none"
                       />
                     </div>
@@ -3031,12 +3133,13 @@ export default function TobiramaFinancialOS() {
                     <div className="relative">
                       <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 font-mono text-xs">$</span>
                       <input
-                        type="number"
-                        step="any"
+                        type="text"
+                        inputMode="decimal"
                         required
-                        placeholder="1200000"
+                        placeholder="1.200.000,00"
                         value={creditForm.remainingAmount}
-                        onChange={(e) => setCreditForm({ ...creditForm, remainingAmount: e.target.value })}
+                        onChange={(e) => handleFormattedChange(e, (formatted) => setCreditForm(prev => ({ ...prev, remainingAmount: formatted })))}
+                        onBlur={() => handleFormattedBlur(creditForm.remainingAmount, (formatted) => setCreditForm(prev => ({ ...prev, remainingAmount: formatted })))}
                         className="w-full pl-7 pr-3 py-2.5 rounded-xl border border-white/[0.06] bg-[#050608] text-sm font-mono text-slate-200 placeholder-slate-700 focus:border-white/[0.15] focus:outline-none"
                       />
                     </div>
@@ -3070,15 +3173,19 @@ export default function TobiramaFinancialOS() {
 
                   <div className="col-span-1">
                     <label className="block text-[10px] font-mono uppercase text-slate-550 mb-1">Pago Mensual</label>
-                    <input
-                      type="number"
-                      step="any"
-                      required
-                      placeholder="300000"
-                      value={creditForm.monthlyPayment}
-                      onChange={(e) => setCreditForm({ ...creditForm, monthlyPayment: e.target.value })}
-                      className="w-full px-3 py-2.5 rounded-xl border border-white/[0.06] bg-[#050608] text-sm font-mono text-slate-200 placeholder-slate-700 focus:border-white/[0.15] focus:outline-none"
-                    />
+                    <div className="relative">
+                      <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 font-mono text-xs">$</span>
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        required
+                        placeholder="300.000,00"
+                        value={creditForm.monthlyPayment}
+                        onChange={(e) => handleFormattedChange(e, (formatted) => setCreditForm(prev => ({ ...prev, monthlyPayment: formatted })))}
+                        onBlur={() => handleFormattedBlur(creditForm.monthlyPayment, (formatted) => setCreditForm(prev => ({ ...prev, monthlyPayment: formatted })))}
+                        className="w-full pl-6 pr-2 py-2.5 rounded-xl border border-white/[0.06] bg-[#050608] text-sm font-mono text-slate-200 placeholder-slate-700 focus:border-white/[0.15] focus:outline-none"
+                      />
+                    </div>
                   </div>
                 </div>
 
