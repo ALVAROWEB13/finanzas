@@ -246,9 +246,40 @@ export default function TobiramaFinancialOS() {
     "Content-Type": "application/json",
     "Authorization": `Bearer ${typeof window !== "undefined" ? localStorage.getItem("tobirama_token") || "" : ""}`
   });
+
+  // Auth form state
+  const [authMode, setAuthMode] = useState<"login" | "register">("login");
   const [usernameInput, setUsernameInput] = useState("");
   const [passwordInput, setPasswordInput] = useState("");
-  const [loginError, setLoginError] = useState(false);
+  const [emailInput, setEmailInput] = useState("");
+  const [fullNameInput, setFullNameInput] = useState("");
+  const [confirmPasswordInput, setConfirmPasswordInput] = useState("");
+  const [loginError, setLoginError] = useState("");
+  const [isAuthLoading, setIsAuthLoading] = useState(false);
+
+  // Current user profile
+  const [currentUser, setCurrentUser] = useState(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const raw = localStorage.getItem("tobirama_profile");
+        return raw ? JSON.parse(raw) : { fullName: "Usuario", role: "user", username: "" };
+      } catch { return { fullName: "Usuario", role: "user", username: "" }; }
+    }
+    return { fullName: "Usuario", role: "user", username: "" };
+  });
+
+  const handleLogout = () => {
+    localStorage.removeItem("tobirama_auth");
+    localStorage.removeItem("tobirama_user");
+    localStorage.removeItem("tobirama_token");
+    localStorage.removeItem("tobirama_profile");
+    setIsAuthenticated(false);
+    setCurrentUser({ fullName: "Usuario", role: "user", username: "" });
+    setUsernameInput("");
+    setPasswordInput("");
+    setEmailInput("");
+    setFullNameInput("");
+  };
 
   // --- REAL MOCK INITIAL STATE ---
   const INITIAL_INCOME = 5976687; // Base Global Income ($5.976.687 COP)
@@ -624,37 +655,91 @@ export default function TobiramaFinancialOS() {
   const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!usernameInput.trim()) {
-      setLoginError(true);
+      setLoginError("Ingresa tu usuario");
       return;
     }
+    setIsAuthLoading(true);
+    setLoginError("");
     try {
       const res = await fetch("/api/auth", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          action: "login",
           username: usernameInput.trim(),
           password: passwordInput
         })
       });
       const data = await res.json();
       if (res.ok && data.success) {
+        const profile = { fullName: data.fullName || data.userId, role: data.role || "user", username: data.username || data.userId };
         if (typeof window !== "undefined") {
           localStorage.setItem("tobirama_auth", "true");
           localStorage.setItem("tobirama_user", data.userId);
           localStorage.setItem("tobirama_token", data.token);
+          localStorage.setItem("tobirama_profile", JSON.stringify(profile));
         }
+        setCurrentUser(profile);
         setIsAuthenticated(true);
-        setLoginError(false);
+        setLoginError("");
         const now = new Date().toLocaleTimeString();
         setTerminalLogs((prev) => [
           ...prev,
           `[${now}] SEGURIDAD: Usuario '${data.userId}' autenticado correctamente a través del Gateway seguro.`
         ]);
       } else {
-        setLoginError(true);
+        setLoginError(data.error || "Usuario o contraseña incorrectos");
       }
     } catch {
-      setLoginError(true);
+      setLoginError("Error de conexión. Intenta de nuevo.");
+    } finally {
+      setIsAuthLoading(false);
+    }
+  };
+
+  const handleRegisterSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoginError("");
+    if (passwordInput !== confirmPasswordInput) {
+      setLoginError("Las contraseñas no coinciden");
+      return;
+    }
+    if (passwordInput.length < 8) {
+      setLoginError("La contraseña debe tener al menos 8 caracteres");
+      return;
+    }
+    setIsAuthLoading(true);
+    try {
+      const res = await fetch("/api/auth", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "register",
+          username: usernameInput.trim(),
+          password: passwordInput,
+          email: emailInput.trim(),
+          fullName: fullNameInput.trim()
+        })
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        const profile = { fullName: data.fullName || data.userId, role: data.role || "user", username: data.username || data.userId };
+        if (typeof window !== "undefined") {
+          localStorage.setItem("tobirama_auth", "true");
+          localStorage.setItem("tobirama_user", data.userId);
+          localStorage.setItem("tobirama_token", data.token);
+          localStorage.setItem("tobirama_profile", JSON.stringify(profile));
+        }
+        setCurrentUser(profile);
+        setIsAuthenticated(true);
+        setLoginError("");
+      } else {
+        setLoginError(data.error || "Error al registrarse");
+      }
+    } catch {
+      setLoginError("Error de conexión. Intenta de nuevo.");
+    } finally {
+      setIsAuthLoading(false);
     }
   };
 
@@ -1412,75 +1497,180 @@ export default function TobiramaFinancialOS() {
     });
   };
 
-  // --- RENDER LOGIN GATEWAY ---
+  // --- RENDER LOGIN / REGISTER GATEWAY ---
   if (!isAuthenticated) {
+    const isRegister = authMode === "register";
     return (
-      <div className="flex items-center justify-center min-h-screen bg-black p-4 font-sans text-slate-100 select-none">
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgba(255,255,255,0.01),transparent_70%)] pointer-events-none" />
-        
+      <div className="flex items-center justify-center min-h-screen bg-black p-4 font-sans text-slate-100 select-none relative overflow-hidden">
+        {/* background glow */}
+        <div className="absolute inset-0 pointer-events-none">
+          <div className="absolute top-1/4 left-1/2 -translate-x-1/2 w-[600px] h-[600px] rounded-full bg-blue-600/5 blur-3xl" />
+          <div className="absolute bottom-0 right-0 w-[400px] h-[400px] rounded-full bg-emerald-600/5 blur-3xl" />
+        </div>
+
         <motion.div
-          initial={{ opacity: 0, scale: 0.96 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ duration: 0.4 }}
-          className="w-full max-w-md bg-[#0a0b0d]/90 border border-white/[0.04] rounded-3xl p-8 backdrop-blur-xl shadow-2xl relative"
+          key={authMode}
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.35 }}
+          className="w-full max-w-md relative z-10"
         >
-          <div className="flex flex-col items-center text-center space-y-6">
-            <div className="h-16 w-16 rounded-2xl bg-white/[0.02] border border-white/[0.08] flex items-center justify-center">
-              <Lock className="h-7 w-7 text-white" />
+          {/* Card */}
+          <div className="bg-[#090a0d]/95 border border-white/[0.06] rounded-3xl p-8 shadow-2xl backdrop-blur-xl">
+            {/* Logo and Title */}
+            <div className="flex flex-col items-center text-center mb-8">
+              <div className="h-14 w-14 rounded-2xl bg-gradient-to-br from-blue-600/20 to-emerald-600/20 border border-white/[0.08] flex items-center justify-center mb-4">
+                <Lock className="h-6 w-6 text-white" />
+              </div>
+              <h2 className="text-xl font-bold tracking-wider uppercase text-white">Tobirama OS</h2>
+              <p className="text-xs text-slate-500 font-mono tracking-wider mt-1">
+                {isRegister ? "CREAR CUENTA — ACCESO FINANCIERO PERSONAL" : "SISTEMA DE CONTROL DE ACTIVOS"}
+              </p>
             </div>
 
-            <div>
-              <h2 className="text-xl font-bold tracking-wider uppercase text-slate-200">TOBIRAMA OS</h2>
-              <p className="text-xs text-slate-500 font-mono tracking-wider mt-1">SISTEMA CONTROL DE ACTIVOS</p>
+            {/* Mode switcher */}
+            <div className="flex gap-1 p-0.5 bg-black rounded-xl border border-white/[0.04] mb-6">
+              <button
+                type="button"
+                onClick={() => { setAuthMode("login"); setLoginError(""); }}
+                className={`flex-1 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all cursor-pointer ${
+                  !isRegister ? "bg-white/[0.05] text-white border border-white/[0.08]" : "text-slate-600 hover:text-slate-400"
+                }`}
+              >
+                Iniciar Sesión
+              </button>
+              <button
+                type="button"
+                onClick={() => { setAuthMode("register"); setLoginError(""); }}
+                className={`flex-1 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all cursor-pointer ${
+                  isRegister ? "bg-white/[0.05] text-white border border-white/[0.08]" : "text-slate-600 hover:text-slate-400"
+                }`}
+              >
+                Registrarse
+              </button>
             </div>
 
-            <form onSubmit={handleLoginSubmit} className="w-full space-y-4 pt-4">
-              <div className="relative">
+            {/* LOGIN FORM */}
+            {!isRegister && (
+              <form onSubmit={handleLoginSubmit} className="space-y-3">
+                <div className="relative">
+                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-600 text-xs font-mono select-none">@</span>
+                  <input
+                    type="text"
+                    placeholder="Usuario"
+                    value={usernameInput}
+                    onChange={(e) => { setUsernameInput(e.target.value); setLoginError(""); }}
+                    className="w-full pl-9 pr-4 py-3.5 rounded-xl bg-black border border-white/[0.06] font-mono text-slate-200 focus:border-blue-500/40 focus:outline-none text-sm placeholder-slate-700"
+                    autoFocus
+                    required
+                  />
+                </div>
+                <div className="relative">
+                  <Lock className="absolute left-4 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-600" />
+                  <input
+                    type="password"
+                    placeholder="Contraseña"
+                    value={passwordInput}
+                    onChange={(e) => { setPasswordInput(e.target.value); setLoginError(""); }}
+                    className="w-full pl-10 pr-4 py-3.5 rounded-xl bg-black border border-white/[0.06] font-mono tracking-widest text-slate-200 focus:border-blue-500/40 focus:outline-none text-sm placeholder-slate-700"
+                    required
+                  />
+                </div>
+
+                {loginError && (
+                  <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-xs text-red-400 font-mono px-1">
+                    ⚠ {loginError}
+                  </motion.p>
+                )}
+
+                <button
+                  type="submit"
+                  disabled={isAuthLoading}
+                  className="w-full py-3.5 rounded-xl bg-white hover:bg-slate-100 text-black text-sm font-bold uppercase tracking-widest transition-all active:scale-[0.98] cursor-pointer disabled:opacity-50 mt-2"
+                >
+                  {isAuthLoading ? "Verificando..." : "Acceder al Sistema"}
+                </button>
+              </form>
+            )}
+
+            {/* REGISTER FORM */}
+            {isRegister && (
+              <form onSubmit={handleRegisterSubmit} className="space-y-3">
                 <input
                   type="text"
-                  placeholder="Ingrese Usuario"
-                  value={usernameInput}
-                  onChange={(e) => setUsernameInput(e.target.value)}
-                  className="w-full px-5 py-4 rounded-2xl bg-black border border-white/[0.06] text-center font-mono text-slate-200 focus:border-blue-500/40 text-base placeholder-slate-650"
-                  autoFocus
+                  placeholder="Nombre completo"
+                  value={fullNameInput}
+                  onChange={(e) => { setFullNameInput(e.target.value); setLoginError(""); }}
+                  className="w-full px-4 py-3 rounded-xl bg-black border border-white/[0.06] font-mono text-slate-200 focus:border-emerald-500/40 focus:outline-none text-sm placeholder-slate-700"
                   required
                 />
-              </div>
 
-              <div className="relative">
+                <input
+                  type="email"
+                  placeholder="Correo electrónico"
+                  value={emailInput}
+                  onChange={(e) => { setEmailInput(e.target.value); setLoginError(""); }}
+                  className="w-full px-4 py-3 rounded-xl bg-black border border-white/[0.06] font-mono text-slate-200 focus:border-emerald-500/40 focus:outline-none text-sm placeholder-slate-700"
+                  required
+                />
+
+                <div className="relative">
+                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-600 text-xs font-mono select-none">@</span>
+                  <input
+                    type="text"
+                    placeholder="Nombre de usuario (sin espacios)"
+                    value={usernameInput}
+                    onChange={(e) => { setUsernameInput(e.target.value.replace(/\s/g, "")); setLoginError(""); }}
+                    className="w-full pl-9 pr-4 py-3 rounded-xl bg-black border border-white/[0.06] font-mono text-slate-200 focus:border-emerald-500/40 focus:outline-none text-sm placeholder-slate-700"
+                    minLength={3}
+                    required
+                  />
+                </div>
+
                 <input
                   type="password"
-                  placeholder="Ingrese Clave de Acceso"
+                  placeholder="Contraseña (mín. 8 caracteres)"
                   value={passwordInput}
-                  onChange={(e) => setPasswordInput(e.target.value)}
-                  className="w-full px-5 py-4 rounded-2xl bg-black border border-white/[0.06] text-center font-mono tracking-widest text-slate-200 focus:border-blue-500/40 text-base placeholder-slate-650"
+                  onChange={(e) => { setPasswordInput(e.target.value); setLoginError(""); }}
+                  className="w-full px-4 py-3 rounded-xl bg-black border border-white/[0.06] font-mono text-slate-200 focus:border-emerald-500/40 focus:outline-none text-sm placeholder-slate-700"
+                  minLength={8}
                   required
                 />
-              </div>
 
-              {loginError && (
-                <motion.div
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  className="text-xs text-red-500 font-mono"
+                <input
+                  type="password"
+                  placeholder="Confirmar contraseña"
+                  value={confirmPasswordInput}
+                  onChange={(e) => { setConfirmPasswordInput(e.target.value); setLoginError(""); }}
+                  className="w-full px-4 py-3 rounded-xl bg-black border border-white/[0.06] font-mono text-slate-200 focus:border-emerald-500/40 focus:outline-none text-sm placeholder-slate-700"
+                  required
+                />
+
+                {loginError && (
+                  <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-xs text-red-400 font-mono px-1">
+                    ⚠ {loginError}
+                  </motion.p>
+                )}
+
+                <button
+                  type="submit"
+                  disabled={isAuthLoading}
+                  className="w-full py-3.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black text-sm font-bold uppercase tracking-widest transition-all active:scale-[0.98] cursor-pointer disabled:opacity-50 mt-2"
                 >
-                  Credenciales inválidas o clave incorrecta.
-                </motion.div>
-              )}
+                  {isAuthLoading ? "Creando cuenta..." : "Crear Cuenta"}
+                </button>
 
-              <button
-                type="submit"
-                className="w-full py-4 rounded-2xl bg-white hover:bg-slate-200 text-black text-sm font-bold uppercase tracking-widest transition-all duration-300 shadow-md active:scale-[0.98] cursor-pointer"
-              >
-                AUTENTICAR OS
-              </button>
-            </form>
-
-            <div className="text-[10px] text-slate-600 font-mono pt-4 leading-relaxed">
-              ID de Terminal: {new Date().getFullYear()}-OS-TOBIRAMA<br/>
-              Acceso restringido a personal de Alta Gerencia.
-            </div>
+                <p className="text-center text-[10px] text-slate-600 font-mono pt-1">
+                  Al registrarte, tus datos financieros son completamente privados e independientes.
+                </p>
+              </form>
+            )}
           </div>
+
+          {/* Footer */}
+          <p className="text-center text-[10px] text-slate-700 font-mono mt-4">
+            Tobirama OS · Datos encriptados · Acceso personal
+          </p>
         </motion.div>
       </div>
     );
@@ -1662,8 +1852,21 @@ export default function TobiramaFinancialOS() {
               <Sliders className="h-4 w-4" />
             </button>
 
-            <div className="h-7 w-7 rounded-full bg-gradient-to-tr from-zinc-700 to-zinc-600 border border-white/[0.08] flex items-center justify-center font-bold text-[10px] text-white">
-              CF
+            {/* User avatar + name + logout */}
+            <div className="flex items-center gap-2 ml-1">
+              <div className="h-7 w-7 rounded-full bg-gradient-to-tr from-blue-700 to-emerald-600 border border-white/[0.08] flex items-center justify-center font-bold text-[10px] text-white flex-shrink-0">
+                {(currentUser.fullName || "U").split(" ").map((n: string) => n[0]).join("").toUpperCase().slice(0, 2)}
+              </div>
+              <span className="hidden lg:block text-xs font-mono text-slate-400 max-w-[100px] truncate">
+                {currentUser.username || currentUser.fullName}
+              </span>
+              <button
+                onClick={handleLogout}
+                title="Cerrar sesión"
+                className="p-1.5 rounded-lg hover:bg-red-500/10 text-slate-600 hover:text-red-400 transition-colors cursor-pointer"
+              >
+                <Lock className="h-3.5 w-3.5" />
+              </button>
             </div>
           </div>
         </header>
