@@ -69,11 +69,22 @@ const getPool = () => {
       process.env.POSTGRES_URL_NON_POOLING;
 
     if (connectionString) {
-      // Clean connection string to prevent it from overriding pg pool's ssl settings
       let cleanUrl = connectionString;
-      if (cleanUrl.includes("sslmode=")) {
-        cleanUrl = cleanUrl.replace(/[?&]sslmode=[^&]+/g, "");
-        cleanUrl = cleanUrl.replace(/\?&/g, "?").replace(/\?$/g, "").replace(/&&/g, "&");
+      try {
+        const parsedUrl = new URL(connectionString);
+        if (parsedUrl.searchParams.has("sslmode")) {
+          parsedUrl.searchParams.delete("sslmode");
+          cleanUrl = parsedUrl.toString();
+        }
+      } catch (err) {
+        // Fallback in case of non-standard URL format
+        if (cleanUrl.includes("sslmode=")) {
+          cleanUrl = cleanUrl.replace(/[?&]sslmode=[^&]+/g, "");
+          if (cleanUrl.includes("&") && !cleanUrl.includes("?")) {
+            cleanUrl = cleanUrl.replace("&", "?");
+          }
+          cleanUrl = cleanUrl.replace(/\?&/g, "?").replace(/\?$/g, "").replace(/&&/g, "&");
+        }
       }
       pool = new Pool({
         connectionString: cleanUrl,
