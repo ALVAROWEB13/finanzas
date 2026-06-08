@@ -161,6 +161,9 @@ export async function POST(req: Request) {
     });
   } catch (err: any) {
     console.error("API POST Auth failed:", err);
-    return NextResponse.json({ error: "Error interno del servidor" }, { status: 500 });
+    return NextResponse.json(
+      { error: `Error interno del servidor: ${err.message || err}` },
+      { status: 500 }
+    );
   }
 }
