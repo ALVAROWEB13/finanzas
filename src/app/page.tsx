@@ -2756,7 +2756,7 @@ export default function TobiramaFinancialOS() {
 
                 <button
                   onClick={() => setActiveView("tracker")}
-                  className="fixed bottom-6 right-6 h-12 w-12 rounded-full bg-white hover:bg-slate-200 active:scale-[0.98] transition-all flex items-center justify-center text-black shadow-lg z-30 cursor-pointer animate-bounce"
+                  className="fixed bottom-24 md:fixed md:bottom-6 right-6 h-12 w-12 rounded-full bg-white hover:bg-slate-200 active:scale-[0.98] transition-all flex items-center justify-center text-black shadow-lg z-30 cursor-pointer animate-bounce"
                   title="Nueva Transacción Flash"
                 >
                   <Plus className="h-5 w-5" />
@@ -3805,7 +3805,7 @@ export default function TobiramaFinancialOS() {
       </div>
 
       {/* Bottom Navigation for Mobile */}
-      <div className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-[#050505]/95 backdrop-blur-xl border-t border-white/[0.04] px-4 py-2 pb-safe-bottom">
+      <div className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-[#050505]/95 backdrop-blur-xl border-t border-white/[0.04] px-4 py-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))]">
         <div className="flex justify-around items-center">
           {[
             { id: "dashboard", label: "Dashboard", icon: Layers },
