@@ -3,6 +3,11 @@ import fs from "fs";
 import path from "path";
 import bcrypt from "bcryptjs";
 
+// Force PG SSL mode to bypass self-signed certificate validation errors in serverless/hosted environments
+if (typeof process !== "undefined" && process.env) {
+  process.env.PGSSLMODE = "no-verify";
+}
+
 const dbJsonPath = path.join(process.cwd(), "src", "data", "db.json");
 
 // --- TYPES ---
@@ -64,8 +69,14 @@ const getPool = () => {
       process.env.POSTGRES_URL_NON_POOLING;
 
     if (connectionString) {
+      // Clean connection string to prevent it from overriding pg pool's ssl settings
+      let cleanUrl = connectionString;
+      if (cleanUrl.includes("sslmode=")) {
+        cleanUrl = cleanUrl.replace(/[?&]sslmode=[^&]+/g, "");
+        cleanUrl = cleanUrl.replace(/\?&/g, "?").replace(/\?$/g, "").replace(/&&/g, "&");
+      }
       pool = new Pool({
-        connectionString,
+        connectionString: cleanUrl,
         ssl: { rejectUnauthorized: false },
       });
     }

@@ -36,8 +36,14 @@ export async function GET(req: Request) {
       });
     }
 
+    let cleanUrl = connectionString;
+    if (cleanUrl.includes("sslmode=")) {
+      cleanUrl = cleanUrl.replace(/[?&]sslmode=[^&]+/g, "");
+      cleanUrl = cleanUrl.replace(/\?&/g, "?").replace(/\?$/g, "").replace(/&&/g, "&");
+    }
+
     const pool = new Pool({
-      connectionString,
+      connectionString: cleanUrl,
       ssl: { rejectUnauthorized: false }
     });
 
