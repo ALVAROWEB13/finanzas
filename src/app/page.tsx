@@ -27,7 +27,10 @@ import {
   Upload,
   Check,
   CheckCircle2,
-  Circle
+  Circle,
+  AlertTriangle,
+  XCircle,
+  Info
 } from "lucide-react";
 
 // --- TYPES ---
@@ -226,6 +229,19 @@ const getCategoryIcon = (cat: string) => {
 };
 
 export default function TobiramaFinancialOS() {
+  // --- TOAST NOTIFICATION SYSTEM ---
+  const [toasts, setToasts] = useState<{ id: string; message: string; type: "success" | "error" | "warning" | "info" }[]>([]);
+  const showToast = (message: string, type: "success" | "error" | "warning" | "info" = "success") => {
+    const id = `toast-${Date.now()}-${Math.random()}`;
+    setToasts((prev) => [...prev, { id, message, type }]);
+    setTimeout(() => {
+      setToasts((prev) => prev.filter((t) => t.id !== id));
+    }, 4000);
+  };
+
+  // Submission lock to prevent double clicks
+  const [isActionPending, setIsActionPending] = useState(false);
+
   // --- AUTHENTICATION STATE ---
   const [isAuthenticated, setIsAuthenticated] = useState(() => {
     if (typeof window !== "undefined") {
@@ -654,6 +670,10 @@ export default function TobiramaFinancialOS() {
 
   const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isAuthLoading) {
+      showToast("Inicio de sesión en progreso. Por favor, espera...", "info");
+      return;
+    }
     if (!usernameInput.trim()) {
       setLoginError("Ingresa tu usuario");
       return;
@@ -682,6 +702,7 @@ export default function TobiramaFinancialOS() {
         setCurrentUser(profile);
         setIsAuthenticated(true);
         setLoginError("");
+        showToast("Sesión iniciada correctamente.", "success");
         const now = new Date().toLocaleTimeString();
         setTerminalLogs((prev) => [
           ...prev,
@@ -689,9 +710,11 @@ export default function TobiramaFinancialOS() {
         ]);
       } else {
         setLoginError(data.error || "Usuario o contraseña incorrectos");
+        showToast(data.error || "Usuario o contraseña incorrectos", "error");
       }
     } catch {
       setLoginError("Error de conexión. Intenta de nuevo.");
+      showToast("Error de conexión al servidor.", "error");
     } finally {
       setIsAuthLoading(false);
     }
@@ -699,6 +722,10 @@ export default function TobiramaFinancialOS() {
 
   const handleRegisterSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isAuthLoading) {
+      showToast("Registro en progreso. Por favor, espera...", "info");
+      return;
+    }
     setLoginError("");
     if (passwordInput !== confirmPasswordInput) {
       setLoginError("Las contraseñas no coinciden");
@@ -733,11 +760,14 @@ export default function TobiramaFinancialOS() {
         setCurrentUser(profile);
         setIsAuthenticated(true);
         setLoginError("");
+        showToast("¡Registro exitoso! Bienvenido a Tobirama OS.", "success");
       } else {
         setLoginError(data.error || "Error al registrarse");
+        showToast(data.error || "Error al registrarse", "error");
       }
     } catch {
       setLoginError("Error de conexión. Intenta de nuevo.");
+      showToast("Error de conexión al servidor.", "error");
     } finally {
       setIsAuthLoading(false);
     }
@@ -752,6 +782,12 @@ export default function TobiramaFinancialOS() {
 
   const saveBudgetEdit = async () => {
     if (!editingItem) return;
+    if (isActionPending) {
+      showToast("Ya hay una acción en progreso. Por favor, espera.", "warning");
+      return;
+    }
+
+    setIsActionPending(true);
 
     const newPaid = parseFormattedCOP(editPaidValue) || 0;
     const newAssigned = parseFormattedCOP(editAssignedValue) || 0;
@@ -786,6 +822,11 @@ export default function TobiramaFinancialOS() {
       ]);
     }
 
+    // Close modal and reset editing state IMMEDIATELY (optimistic UX)
+    const itemBackup = { ...editingItem };
+    setEditingItem(null);
+    showToast("Presupuesto modificado con éxito.", "success");
+
     try {
       const headers = getAuthHeaderJSON();
       // Update the budget item on database
@@ -793,7 +834,7 @@ export default function TobiramaFinancialOS() {
         method: "POST",
         headers,
         body: JSON.stringify({
-          id: editingItem.id,
+          id: itemBackup.id,
           assigned: newAssigned,
           paid: newPaid,
           isFixed: editIsFixed
@@ -815,20 +856,28 @@ export default function TobiramaFinancialOS() {
       fetchFromServer(); // Refresh in background
     } catch (err) {
       console.error("Failed to sync budget edit with DB:", err);
+      showToast("Error al guardar cambios en el servidor.", "error");
+    } finally {
+      setIsActionPending(false);
     }
-
-    setEditingItem(null);
   };
 
   const handleAddCategorySubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isActionPending) {
+      showToast("Ya hay una acción en progreso. Por favor, espera.", "warning");
+      return;
+    }
+
     const catName = newCategoryName.trim();
     if (!catName) return;
 
     if (budgetItems.some((item) => item.category.toLowerCase() === catName.toLowerCase())) {
-      alert("Esta categoría ya existe.");
+      showToast("Esta categoría ya existe.", "warning");
       return;
     }
+
+    setIsActionPending(true);
 
     const newItem: BudgetItem = {
       id: `b-${Date.now()}`,
@@ -841,6 +890,7 @@ export default function TobiramaFinancialOS() {
 
     setBudgetItems((prev) => [...prev, newItem]);
     setNewCategoryName("");
+    showToast(`Categoría '${catName}' añadida con éxito.`, "success");
 
     try {
       const res = await fetch("/api/budget", {
@@ -861,14 +911,24 @@ export default function TobiramaFinancialOS() {
       fetchFromServer();
     } catch (err) {
       console.error("Failed to add new budget item:", err);
+      showToast("Error al sincronizar categoría con el servidor.", "error");
+    } finally {
+      setIsActionPending(false);
     }
   };
 
   // Quick register transaction form submission (Vista C - Screen 2 style)
   const handleQuickRegister = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isActionPending) {
+      showToast("Ya hay una acción en progreso. Por favor, espera.", "warning");
+      return;
+    }
+
     const amountVal = parseFormattedCOP(quickAmount) || 0;
     if (amountVal <= 0) return;
+
+    setIsActionPending(true);
 
     const finalCategory = quickCategory === "Otra..." ? (customCategory.trim() || "Otros") : quickCategory;
     const desc = quickDescription.trim() || `Transacción flash: ${finalCategory}`;
@@ -885,6 +945,7 @@ export default function TobiramaFinancialOS() {
       isFixed: quickIsFixed,
     };
 
+    // Optimistic UI updates
     setTransactions((prev) => [newTx, ...prev]);
 
     // Reactively update budget items
@@ -916,6 +977,23 @@ export default function TobiramaFinancialOS() {
       });
     }
 
+    // Clear form immediately so the action feels instantaneous
+    setQuickAmount("0,00");
+    setQuickDescription("");
+    setCustomCategory("");
+    if (quickCategory === "Otra...") {
+      setQuickCategory("Vivienda"); // reset
+    }
+
+    // Show high-visibility success feedback instantly
+    showToast(`Transacción de ${formatCOP(amountVal)} registrada con éxito.`, "success");
+
+    const timeStr = new Date().toLocaleTimeString();
+    setTerminalLogs((prev) => [
+      ...prev,
+      `[${timeStr}] TRANSACCIÓN: Registro flash de ${formatCOP(amountVal)} en la categoría '${finalCategory}' añadido.`
+    ]);
+
     try {
       const res = await fetch("/api/transactions", {
         method: "POST",
@@ -928,28 +1006,22 @@ export default function TobiramaFinancialOS() {
       fetchFromServer(); // Refresh to ensure perfect sync
     } catch (err) {
       console.error("Failed to sync new transaction with DB:", err);
+      showToast("Error de red al guardar en la base de datos.", "warning");
+    } finally {
+      setIsActionPending(false);
     }
-
-    const timeStr = new Date().toLocaleTimeString();
-    setTerminalLogs((prev) => [
-      ...prev,
-      `[${timeStr}] TRANSACCIÓN: Registro flash de ${formatCOP(amountVal)} en la categoría '${finalCategory}' añadido con éxito.`
-    ]);
-
-    setQuickSuccessMsg(true);
-    setQuickAmount("0,00");
-    setQuickDescription("");
-    setCustomCategory("");
-    if (quickCategory === "Otra...") {
-      setQuickCategory("Vivienda"); // reset
-    }
-    setTimeout(() => setQuickSuccessMsg(false), 3500);
   };
 
   // REACTIVE TRANSACTION DELETION (Clear data cleanly)
   const handleDeleteTransaction = async (id: string) => {
+    if (isActionPending) {
+      showToast("Ya hay una acción en progreso. Por favor, espera.", "warning");
+      return;
+    }
     const txToDelete = transactions.find((t) => t.id === id);
     if (!txToDelete) return;
+
+    setIsActionPending(true);
 
     // Remove from central list
     setTransactions((prev) => prev.filter((t) => t.id !== id));
@@ -969,6 +1041,8 @@ export default function TobiramaFinancialOS() {
       );
     }
 
+    showToast(`Transacción '${txToDelete.description}' eliminada con éxito.`, "info");
+
     try {
       const res = await fetch(`/api/transactions?id=${id}`, {
         method: "DELETE",
@@ -980,6 +1054,9 @@ export default function TobiramaFinancialOS() {
       fetchFromServer(); // Sync ledger
     } catch (err) {
       console.error("Failed to delete transaction from DB:", err);
+      showToast("Error al eliminar la transacción del servidor.", "error");
+    } finally {
+      setIsActionPending(false);
     }
 
     // Append terminal logs
@@ -993,13 +1070,20 @@ export default function TobiramaFinancialOS() {
   const handleDeleteBudget = async (id: string) => {
     const itemToDelete = budgetItems.find((item) => item.id === id);
     if (!itemToDelete) return;
+    if (isActionPending) {
+      showToast("Ya hay una acción en progreso. Por favor, espera.", "warning");
+      return;
+    }
 
     if (!confirm(`¿Estás seguro de que deseas eliminar la categoría "${itemToDelete.category}"? Esto borrará el registro de presupuesto asociado.`)) {
       return;
     }
 
+    setIsActionPending(true);
+
     // Optimistically update locally
     setBudgetItems((prev) => prev.filter((item) => item.id !== id));
+    showToast(`Categoría '${itemToDelete.category}' eliminada con éxito.`, "info");
 
     try {
       const res = await fetch(`/api/budget?id=${id}`, {
@@ -1018,6 +1102,9 @@ export default function TobiramaFinancialOS() {
       ]);
     } catch (err) {
       console.error("Failed to delete budget item from DB:", err);
+      showToast("Error al eliminar la categoría del servidor.", "error");
+    } finally {
+      setIsActionPending(false);
     }
   };
 
@@ -1203,6 +1290,10 @@ export default function TobiramaFinancialOS() {
 
   const handleAddCreditSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isActionPending) {
+      showToast("Ya hay una acción en progreso. Por favor, espera.", "warning");
+      return;
+    }
     const totalAmt = parseFormattedCOP(creditForm.totalAmount) || 0;
     const remainingAmt = parseFormattedCOP(creditForm.remainingAmount) || 0;
     const monthlyPay = parseFormattedCOP(creditForm.monthlyPayment) || 0;
@@ -1211,6 +1302,8 @@ export default function TobiramaFinancialOS() {
     const categoryVal = creditForm.category.trim();
 
     if (!creditForm.name || totalAmt <= 0 || !categoryVal) return;
+
+    setIsActionPending(true);
 
     const newCredit: Credit = {
       id: `c-${Date.now()}`,
@@ -1236,6 +1329,8 @@ export default function TobiramaFinancialOS() {
       category: ""
     });
 
+    showToast(`Crédito '${newCredit.name}' registrado con éxito.`, "success");
+
     const timeStr = new Date().toLocaleTimeString();
     setTerminalLogs((prev) => [
       ...prev,
@@ -1254,17 +1349,27 @@ export default function TobiramaFinancialOS() {
       fetchFromServer();
     } catch (err) {
       console.error("Failed to add credit:", err);
+      showToast("Error al registrar el crédito en el servidor.", "error");
+    } finally {
+      setIsActionPending(false);
     }
   };
 
   const handleDeleteCredit = async (id: string) => {
     const creditToDelete = credits.find(c => c.id === id);
     if (!creditToDelete) return;
+    if (isActionPending) {
+      showToast("Ya hay una acción en progreso. Por favor, espera.", "warning");
+      return;
+    }
 
     if (!confirm(`¿Estás seguro de que deseas eliminar el crédito "${creditToDelete.name}"?`)) return;
 
+    setIsActionPending(true);
+
     // Optimistically update locally
     setCredits((prev) => prev.filter((c) => c.id !== id));
+    showToast(`Crédito '${creditToDelete.name}' eliminado con éxito.`, "info");
 
     const timeStr = new Date().toLocaleTimeString();
     setTerminalLogs((prev) => [
@@ -1283,6 +1388,9 @@ export default function TobiramaFinancialOS() {
       fetchFromServer();
     } catch (err) {
       console.error("Failed to delete credit:", err);
+      showToast("Error al eliminar el crédito del servidor.", "error");
+    } finally {
+      setIsActionPending(false);
     }
   };
 
@@ -3455,6 +3563,67 @@ export default function TobiramaFinancialOS() {
           </div>
         )}
       </AnimatePresence>
+
+      {/* --- PREMIUM FLOATING TOAST NOTIFICATIONS --- */}
+      <div className="fixed top-6 left-1/2 -translate-x-1/2 z-[9999] flex flex-col gap-3 w-full max-w-md px-4 pointer-events-none">
+        <AnimatePresence>
+          {toasts.map((toast) => {
+            const isSuccess = toast.type === "success";
+            const isError = toast.type === "error";
+            const isWarning = toast.type === "warning";
+            const isInfo = toast.type === "info";
+            
+            // Icon selection
+            let IconComp = Info;
+            if (isSuccess) IconComp = CheckCircle2;
+            if (isError) IconComp = XCircle;
+            if (isWarning) IconComp = AlertTriangle;
+
+            // Premium Color Scheme & Border glows
+            let ringColor = "border-emerald-500/30 shadow-emerald-950/20";
+            let textColor = "text-emerald-400";
+            let iconColor = "text-emerald-400";
+            if (isError) {
+              ringColor = "border-red-500/30 shadow-red-950/20";
+              textColor = "text-red-400";
+              iconColor = "text-red-400";
+            } else if (isWarning) {
+              ringColor = "border-yellow-500/30 shadow-yellow-950/20";
+              textColor = "text-yellow-400";
+              iconColor = "text-yellow-400";
+            } else if (isInfo) {
+              ringColor = "border-blue-500/30 shadow-blue-950/20";
+              textColor = "text-blue-400";
+              iconColor = "text-blue-400";
+            }
+
+            return (
+              <motion.div
+                key={toast.id}
+                initial={{ opacity: 0, y: -20, scale: 0.95 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: -10, scale: 0.98, transition: { duration: 0.15 } }}
+                layout
+                className={`w-full flex items-center gap-3.5 px-4.5 py-3.5 rounded-2xl bg-zinc-950/90 backdrop-blur-xl border ${ringColor} shadow-xl text-xs font-mono tracking-wide pointer-events-auto`}
+              >
+                <div className={`p-1.5 rounded-xl bg-white/[0.03] ${iconColor}`}>
+                  <IconComp className="h-4 w-4" />
+                </div>
+                <div className="flex-1 text-slate-200 leading-relaxed font-sans font-medium">
+                  {toast.message}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setToasts((prev) => prev.filter((t) => t.id !== toast.id))}
+                  className="p-1 rounded-lg text-slate-500 hover:text-slate-300 hover:bg-white/[0.05] transition-all cursor-pointer animate-none"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </motion.div>
+            );
+          })}
+        </AnimatePresence>
+      </div>
     </div>
   );
 }
