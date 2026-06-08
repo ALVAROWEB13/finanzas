@@ -1888,9 +1888,9 @@ export default function TobiramaFinancialOS() {
 
           <nav className="flex flex-col gap-4">
             {[
-              { id: "dashboard", label: "Torre de Control", icon: Layers },
-              { id: "tracker", label: "Libro Diario", icon: Coins },
-              { id: "audit", label: "Auditoría", icon: FileText },
+              { id: "dashboard", label: "Dashboard", icon: Layers },
+              { id: "tracker", label: "Movimientos", icon: Coins },
+              { id: "audit", label: "Control mensual", icon: FileText },
             ].map((item) => {
               const Icon = item.icon;
               const isActive = activeView === item.id;
@@ -1951,9 +1951,9 @@ export default function TobiramaFinancialOS() {
 
                 <nav className="space-y-2">
                   {[
-                    { id: "dashboard", label: "Torre de Control", icon: Layers },
-                    { id: "tracker", label: "Libro Diario", icon: Coins },
-                    { id: "audit", label: "Auditoría", icon: FileText },
+                    { id: "dashboard", label: "Dashboard", icon: Layers },
+                    { id: "tracker", label: "Movimientos", icon: Coins },
+                    { id: "audit", label: "Control mensual", icon: FileText },
                   ].map((item) => {
                     const Icon = item.icon;
                     const isActive = activeView === item.id;
@@ -1989,20 +1989,14 @@ export default function TobiramaFinancialOS() {
         {/* --- HEADER --- */}
         <header className="sticky top-0 bg-black/90 backdrop-blur-md border-b border-white/[0.04] px-6 py-4 flex items-center justify-between z-10">
           <div className="flex items-center gap-4">
-            <button
-              onClick={() => setIsSidebarOpen(true)}
-              className="md:hidden p-2 rounded-lg bg-white/5 text-slate-400 hover:text-white"
-            >
-              <Menu className="h-5 w-5" />
-            </button>
-            <div className="hidden md:flex items-center gap-8">
+            <div className="flex items-center gap-8">
               <h2 className="text-sm font-bold tracking-widest text-white uppercase">Tobirama OS</h2>
               
-              <div className="flex gap-1 p-0.5 bg-[#0a0a0c] rounded-lg border border-white/[0.04]">
+              <div className="hidden md:flex gap-1 p-0.5 bg-[#0a0a0c] rounded-lg border border-white/[0.04]">
                 {[
-                  { id: "dashboard", label: "Torre de Control" },
-                  { id: "tracker", label: "Libro Diario" },
-                  { id: "audit", label: "Auditoría" }
+                  { id: "dashboard", label: "Dashboard" },
+                  { id: "tracker", label: "Movimientos" },
+                  { id: "audit", label: "Control mensual" }
                 ].map((tab) => {
                   const isActive = activeView === tab.id;
                   return (
@@ -2029,27 +2023,6 @@ export default function TobiramaFinancialOS() {
           </div>
 
           <div className="flex items-center gap-4">
-            <div className="relative hidden md:block">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-600" />
-              <input
-                type="text"
-                placeholder="Buscar global..."
-                className="w-48 pl-9 pr-4 py-1.5 rounded-lg border border-white/[0.04] bg-[#0a0b0d] text-xs font-mono focus:border-white/[0.1] focus:w-60 text-slate-300"
-              />
-            </div>
-
-            <button className="relative p-2 rounded-lg hover:bg-white/5 text-slate-500 hover:text-slate-300 transition-colors">
-              <span className="absolute top-1.5 right-1.5 h-1.5 w-1.5 rounded-full bg-blue-500" />
-              <Bell className="h-4 w-4" />
-            </button>
-
-            <button className="p-2 rounded-lg hover:bg-white/5 text-slate-500 hover:text-slate-300 transition-colors">
-              <History className="h-4 w-4" />
-            </button>
-
-            <button className="p-2 rounded-lg hover:bg-white/5 text-slate-500 hover:text-slate-300 transition-colors">
-              <Sliders className="h-4 w-4" />
-            </button>
 
             {/* User avatar + name + logout */}
             <div className="flex items-center gap-2 ml-1">
@@ -2109,7 +2082,7 @@ export default function TobiramaFinancialOS() {
         </div>
 
         {/* --- VIEW ROUTING --- */}
-        <main className="flex-1 p-6 md:p-8 max-w-7xl w-full mx-auto space-y-8 bg-black">
+        <main className="flex-1 p-6 pb-24 md:p-8 md:pb-8 max-w-7xl w-full mx-auto space-y-8 bg-black">
           <AnimatePresence mode="wait">
             
             {/* --- VISTA A: TORRE DE CONTROL (DASHBOARD) --- */}
@@ -3350,29 +3323,31 @@ export default function TobiramaFinancialOS() {
                 </div>
 
                 {/* Database Control Panel */}
-                <div className="glass-panel rounded-2xl p-6 bg-[#0a0b0d]/50 border-white/[0.04] mt-6 space-y-4">
-                  <div className="flex justify-between items-center border-b border-white/[0.04] pb-2">
-                    <div>
-                      <span className="text-[9px] text-slate-500 uppercase tracking-widest font-mono block font-semibold">PANEL ADMINISTRATIVO</span>
-                      <h4 className="text-sm font-bold text-white mt-1 uppercase tracking-wider">MANTENIMIENTO DE BASE DE DATOS</h4>
+                {currentUser?.role === "admin" && (
+                  <div className="glass-panel rounded-2xl p-6 bg-[#0a0b0d]/50 border-white/[0.04] mt-6 space-y-4">
+                    <div className="flex justify-between items-center border-b border-white/[0.04] pb-2">
+                      <div>
+                        <span className="text-[9px] text-slate-500 uppercase tracking-widest font-mono block font-semibold">PANEL ADMINISTRATIVO</span>
+                        <h4 className="text-sm font-bold text-white mt-1 uppercase tracking-wider">MANTENIMIENTO DE BASE DE DATOS</h4>
+                      </div>
+                      <span className="text-[10px] text-slate-500 font-mono">
+                        Estado: <span className="text-emerald-400 font-bold">CONECTADO</span>
+                      </span>
                     </div>
-                    <span className="text-[10px] text-slate-500 font-mono">
-                      Estado: <span className="text-emerald-400 font-bold">CONECTADO</span>
-                    </span>
-                  </div>
 
-                  <div className="flex flex-col sm:flex-row gap-4 items-center justify-between">
-                    <p className="text-xs text-slate-400 max-w-lg leading-normal font-mono">
-                      Para limpiar el sistema y comenzar de cero, puedes restablecer la base de datos. Esto eliminará de forma irreversible todas las transacciones registradas y reestablecerá los presupuestos de las categorías base a $0.
-                    </p>
-                    <button
-                      onClick={handleResetDb}
-                      className="px-5 py-3 rounded-xl bg-red-650/10 hover:bg-red-650/20 border border-red-500/25 hover:border-red-500/40 text-red-400 hover:text-red-300 font-bold text-xs uppercase tracking-wider transition-all cursor-pointer flex-shrink-0"
-                    >
-                      Restablecer Sistema (Borrar Todo) ⚠️
-                    </button>
+                    <div className="flex flex-col sm:flex-row gap-4 items-center justify-between">
+                      <p className="text-xs text-slate-400 max-w-lg leading-normal font-mono">
+                        Para limpiar el sistema y comenzar de cero, puedes restablecer la base de datos. Esto eliminará de forma irreversible todas las transacciones registradas y reestablecerá los presupuestos de las categorías base a $0.
+                      </p>
+                      <button
+                        onClick={handleResetDb}
+                        className="px-5 py-3 rounded-xl bg-red-650/10 hover:bg-red-650/20 border border-red-500/25 hover:border-red-500/40 text-red-400 hover:text-red-300 font-bold text-xs uppercase tracking-wider transition-all cursor-pointer flex-shrink-0"
+                      >
+                        Restablecer Sistema (Borrar Todo) ⚠️
+                      </button>
+                    </div>
                   </div>
-                </div>
+                )}
               </motion.div>
             )}
 
@@ -3720,6 +3695,34 @@ export default function TobiramaFinancialOS() {
             );
           })}
         </AnimatePresence>
+      </div>
+
+      {/* Bottom Navigation for Mobile */}
+      <div className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-[#050505]/95 backdrop-blur-xl border-t border-white/[0.04] px-4 py-2 pb-safe-bottom">
+        <div className="flex justify-around items-center">
+          {[
+            { id: "dashboard", label: "Dashboard", icon: Layers },
+            { id: "tracker", label: "Movimientos", icon: Coins },
+            { id: "audit", label: "Control mensual", icon: FileText }
+          ].map((item) => {
+            const Icon = item.icon;
+            const isActive = activeView === item.id;
+            return (
+              <button
+                key={item.id}
+                onClick={() => setActiveView(item.id as "dashboard" | "tracker" | "audit")}
+                className="flex flex-col items-center gap-0.5 py-1 px-3 transition-all cursor-pointer bg-transparent border-0"
+              >
+                <div className={`p-1.5 rounded-xl transition-all ${isActive ? 'bg-white/[0.06] text-white border border-white/[0.08]' : 'text-slate-500 hover:text-slate-300'}`}>
+                  <Icon className="h-5 w-5" />
+                </div>
+                <span className={`text-[9px] font-mono font-medium tracking-wide transition-colors ${isActive ? 'text-white' : 'text-slate-500'}`}>
+                  {item.label}
+                </span>
+              </button>
+            );
+          })}
+        </div>
       </div>
     </div>
   );
