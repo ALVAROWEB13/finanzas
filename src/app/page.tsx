@@ -438,8 +438,45 @@ export default function TobiramaFinancialOS() {
   }, [budgetItems, credits, transactions]);
 
   const categoriesForSelection = useMemo(() => {
-    return [...CATEGORIES, "Otra..."];
-  }, [CATEGORIES]);
+    if (quickType === "Ingreso") {
+      const incomeCats = CATEGORIES.filter(
+        (c) =>
+          c === "Ingresos" ||
+          c.toLowerCase().includes("ingreso") ||
+          c.toLowerCase().includes("sueldo") ||
+          c.toLowerCase().includes("freelance") ||
+          c.toLowerCase().includes("rendimiento")
+      );
+      if (!incomeCats.includes("Ingresos")) {
+        incomeCats.unshift("Ingresos");
+      }
+      return [...incomeCats, "Otra..."];
+    } else if (quickType === "Movimiento a Reserva") {
+      const reserveCats = CATEGORIES.filter(
+        (c) =>
+          c === "Ahorro / Reserva" ||
+          c.toLowerCase().includes("ahorro") ||
+          c.toLowerCase().includes("reserva") ||
+          c.toLowerCase().includes("fondo") ||
+          c.toLowerCase().includes("colchón")
+      );
+      if (!reserveCats.includes("Ahorro / Reserva")) {
+        reserveCats.unshift("Ahorro / Reserva");
+      }
+      return [...reserveCats, "Otra..."];
+    } else {
+      const expenseCats = CATEGORIES.filter(
+        (c) =>
+          c !== "Ingresos" &&
+          c !== "Ahorro / Reserva" &&
+          !c.toLowerCase().includes("ahorro / reserva")
+      );
+      if (expenseCats.length === 0) {
+        expenseCats.push("Otros");
+      }
+      return [...expenseCats, "Otra..."];
+    }
+  }, [CATEGORIES, quickType]);
 
   // --- DYNAMIC MONTHLY BUDGETITEMS COMPUTATION ---
   const monthlyBudgetItems = useMemo(() => {
@@ -1784,6 +1821,60 @@ export default function TobiramaFinancialOS() {
     );
   }
 
+  // --- UI/UX Helpers for Visual Capture Form ---
+  const visualFormConfig = useMemo(() => {
+    const isIncome = quickType === "Ingreso";
+    const isReserve = quickType === "Movimiento a Reserva";
+
+    return {
+      cardBorder: isIncome 
+        ? "border-emerald-500/10 shadow-[0_0_50px_rgba(16,185,129,0.06)] bg-gradient-to-b from-[#020603] to-[#040507]" 
+        : isReserve
+          ? "border-blue-500/10 shadow-[0_0_50px_rgba(59,130,246,0.06)] bg-gradient-to-b from-[#020306] to-[#040507]"
+          : "border-red-500/10 shadow-[0_0_50px_rgba(239,68,68,0.06)] bg-gradient-to-b from-[#060202] to-[#040507]",
+      typeColor: isIncome
+        ? "text-emerald-400"
+        : isReserve
+          ? "text-blue-400"
+          : "text-red-400 font-semibold",
+      amountLabel: isIncome
+        ? "Monto del Ingreso"
+        : isReserve
+          ? "Monto de la Reserva / Ahorro"
+          : "Monto del Gasto",
+      amountRing: isIncome
+        ? "focus-within:border-emerald-500/30"
+        : isReserve
+          ? "focus-within:border-blue-500/30"
+          : "focus-within:border-red-500/30",
+      descLabel: isIncome
+        ? "Detalle del Ingreso"
+        : isReserve
+          ? "Detalle de la Reserva / Ahorro"
+          : "Detalle del Gasto",
+      descPlaceholder: isIncome
+        ? "Concepto o Procedencia (Ej. Pago de Nómina)"
+        : isReserve
+          ? "Fondo de destino (Ej. Colchón de Emergencias)"
+          : "Comercio o Concepto (Ej. Gasolina Copec)",
+      payMethodLabel: isIncome
+        ? "Recibido en (Cuenta/Caja)"
+        : isReserve
+          ? "Origen del Dinero"
+          : "Método de Pago",
+      confirmBtnBg: isIncome
+        ? "bg-gradient-to-r from-emerald-500 to-green-400 hover:from-emerald-400 hover:to-green-300 text-black shadow-emerald-500/5"
+        : isReserve
+          ? "bg-gradient-to-r from-blue-500 to-indigo-400 hover:from-blue-400 hover:to-indigo-300 text-white shadow-blue-500/5"
+          : "bg-gradient-to-r from-red-500 to-rose-400 hover:from-red-400 hover:to-rose-350 text-white shadow-red-500/5",
+      confirmBtnText: isIncome
+        ? "Confirmar Ingreso 💰"
+        : isReserve
+          ? "Confirmar Reserva 🛡️"
+          : "Confirmar Gasto 💸"
+    };
+  }, [quickType]);
+
   // --- RENDER MAIN OS APP ---
   return (
     <div className="flex min-h-screen bg-black text-[#f8fafc] overflow-hidden select-none font-sans">
@@ -2607,8 +2698,43 @@ export default function TobiramaFinancialOS() {
                   
                   {/* Left Column: Visual Capture Form */}
                   <div className="lg:col-span-6 flex flex-col justify-center">
-                    <div className="glass-panel-heavy rounded-3xl p-6 sm:p-8 max-w-lg w-full mx-auto space-y-5 relative border border-white/[0.06] shadow-[0_0_50px_rgba(0,0,0,0.5)] bg-black">
+                    <div className={`glass-panel-heavy rounded-3xl p-6 sm:p-8 max-w-lg w-full mx-auto space-y-5 relative border shadow-[0_0_50px_rgba(0,0,0,0.5)] transition-all duration-500 ${visualFormConfig.cardBorder}`}>
                       
+                      {/* PROMINENT MOVEMENT TYPE SWITCHER (Gasto / Ingreso / Reserva) */}
+                      <div className="grid grid-cols-3 gap-1.5 p-1 bg-[#090a0c] rounded-2xl border border-white/[0.04] relative">
+                        {[
+                          { id: "Gasto Extra", label: "Gasto", icon: ArrowDownLeft, activeClass: "bg-red-500/10 border-red-500/30 text-red-400 shadow-[0_0_15px_rgba(239,68,68,0.05)]", inactiveClass: "text-slate-500 hover:text-red-400/80" },
+                          { id: "Ingreso", label: "Ingreso", icon: ArrowUpRight, activeClass: "bg-emerald-500/10 border-emerald-500/30 text-emerald-400 shadow-[0_0_15px_rgba(16,185,129,0.05)]", inactiveClass: "text-slate-500 hover:text-emerald-400/80" },
+                          { id: "Movimiento a Reserva", label: "Reserva", icon: TrendingUp, activeClass: "bg-blue-500/10 border-blue-500/30 text-blue-400 shadow-[0_0_15px_rgba(59,130,246,0.05)]", inactiveClass: "text-slate-500 hover:text-blue-400/80" }
+                        ].map((t) => {
+                          const isSel = quickType === t.id;
+                          const Icon = t.icon;
+                          return (
+                            <button
+                              key={t.id}
+                              type="button"
+                              onClick={() => {
+                                setQuickType(t.id as any);
+                                // Automatically adjust quickCategory to match type
+                                if (t.id === "Ingreso") {
+                                  setQuickCategory("Ingresos");
+                                } else if (t.id === "Movimiento a Reserva") {
+                                  setQuickCategory("Ahorro / Reserva");
+                                } else {
+                                  setQuickCategory("Vivienda");
+                                }
+                              }}
+                              className={`py-2.5 px-2 rounded-xl border text-[10px] font-bold uppercase tracking-wider font-mono transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                                isSel ? t.activeClass : `bg-black border-transparent ${t.inactiveClass}`
+                              }`}
+                            >
+                              <Icon className="h-3.5 w-3.5" />
+                              <span>{t.label}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+
                       {/* Input Mode Selector tabs */}
                       <div className="grid grid-cols-3 gap-1 p-1 bg-[#090a0c] rounded-xl border border-white/[0.04] relative">
                         {[
@@ -2627,7 +2753,7 @@ export default function TobiramaFinancialOS() {
                                 setVoiceText("");
                               }}
                               className={`py-1.5 rounded-lg text-3xs font-bold uppercase tracking-wider font-mono transition-all cursor-pointer relative ${
-                                isSel ? "text-white" : "text-slate-555 hover:text-slate-300"
+                                isSel ? "text-white" : "text-slate-555 hover:text-slate-350"
                               }`}
                             >
                               {isSel && (
@@ -2644,16 +2770,16 @@ export default function TobiramaFinancialOS() {
                       </div>
 
                       <div className="text-center space-y-0.5">
-                        <span className="text-[9px] text-slate-550 uppercase tracking-widest font-mono block font-semibold">NUEVO REGISTRO</span>
-                        <h3 className="text-sm font-bold text-slate-350 font-mono tracking-tight">
-                          {quickType === "Ingreso" ? "INGRESO DE OPERACIÓN" : quickType === "Movimiento a Reserva" ? "MOVIMIENTO A RESERVA" : "GASTO EXTRA DE CAJA"}
+                        <span className="text-[9px] text-slate-550 uppercase tracking-widest font-mono block font-semibold">REGISTRO DE OPERACIÓN</span>
+                        <h3 className={`text-xs font-bold font-mono tracking-tight ${visualFormConfig.typeColor}`}>
+                          {quickType === "Ingreso" ? "INGRESO DE FONDOS" : quickType === "Movimiento a Reserva" ? "TRASLADO A RESERVA / AHORRO" : "EGRESO / GASTO EXTRA DE CAJA"}
                         </h3>
                       </div>
 
                       {/* Display amount & direct edit field */}
                       <div className="space-y-1.5 relative">
-                        <span className="text-[9px] text-slate-500 uppercase tracking-widest font-mono block font-semibold">Monto de la Transacción</span>
-                        <div className="relative flex items-center bg-[#090a0c]/60 border border-white/[0.04] rounded-2xl px-4 py-3.5 hover:border-white/[0.08] focus-within:border-emerald-500/30 transition-all">
+                        <span className="text-[9px] text-slate-500 uppercase tracking-widest font-mono block font-semibold">{visualFormConfig.amountLabel}</span>
+                        <div className={`relative flex items-center bg-[#090a0c]/60 border border-white/[0.04] rounded-2xl px-4 py-3.5 hover:border-white/[0.08] transition-all ${visualFormConfig.amountRing}`}>
                           <span className="text-slate-500 font-mono text-lg font-bold mr-2 select-none">$</span>
                           
                           <input
@@ -2679,10 +2805,10 @@ export default function TobiramaFinancialOS() {
 
                       {/* Description Input */}
                       <div className="space-y-1.5">
-                        <span className="text-[9px] text-slate-500 uppercase tracking-widest font-mono block font-semibold">Detalle del Gasto</span>
+                        <span className="text-[9px] text-slate-500 uppercase tracking-widest font-mono block font-semibold">{visualFormConfig.descLabel}</span>
                         <input
                           type="text"
-                          placeholder="Comercio o Concepto (Ej. Gasolina Copec)"
+                          placeholder={visualFormConfig.descPlaceholder}
                           value={quickDescription}
                           onChange={(e) => setQuickDescription(e.target.value)}
                           className="w-full px-4 py-3 rounded-2xl border border-white/[0.04] bg-[#090a0c]/60 text-xs text-slate-200 placeholder-slate-700 focus:border-white/[0.1] focus:bg-[#090a0c]/80 transition-all focus:outline-none"
@@ -2877,7 +3003,7 @@ export default function TobiramaFinancialOS() {
 
                       {/* Payment method segmented control */}
                       <div className="space-y-2">
-                        <span className="text-[9px] text-slate-550 uppercase tracking-widest font-mono block font-semibold">Método de Pago</span>
+                        <span className="text-[9px] text-slate-550 uppercase tracking-widest font-mono block font-semibold">{visualFormConfig.payMethodLabel}</span>
                         <div className="grid grid-cols-3 gap-1 p-0.5 bg-[#090a0c] rounded-xl border border-white/[0.02]">
                           {(["Débito", "TC", "Efectivo"] as PaymentMethod[]).map((method) => {
                             const isSel = quickMethod === method;
@@ -2898,35 +3024,6 @@ export default function TobiramaFinancialOS() {
                                   />
                                 )}
                                 <span className="relative z-10">{method === "TC" ? "CRÉDITO" : method.toUpperCase()}</span>
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </div>
-
-                      {/* Type switcher segmented control */}
-                      <div className="space-y-2">
-                        <span className="text-[9px] text-slate-555 uppercase tracking-widest font-mono block font-semibold">Tipo de Movimiento</span>
-                        <div className="grid grid-cols-3 gap-1 p-0.5 bg-[#090a0c] rounded-xl border border-white/[0.02]">
-                          {(["Gasto Extra", "Movimiento a Reserva", "Ingreso"] as TransactionType[]).map((tType) => {
-                            const isSel = quickType === tType;
-                            return (
-                              <button
-                                key={tType}
-                                type="button"
-                                onClick={() => setQuickType(tType)}
-                                className={`py-1.5 rounded-lg text-[9px] font-bold uppercase tracking-wider font-mono transition-all cursor-pointer relative ${
-                                  isSel ? "text-white" : "text-slate-650 hover:text-slate-400"
-                                }`}
-                              >
-                                {isSel && (
-                                  <motion.div
-                                    layoutId="quickTypePill"
-                                    className="absolute inset-0 bg-white/[0.03] border border-white/[0.08] rounded-lg"
-                                    transition={{ type: "spring", stiffness: 380, damping: 30 }}
-                                  />
-                                )}
-                                <span className="relative z-10">{tType === "Gasto Extra" ? "Gasto" : tType === "Movimiento a Reserva" ? "Reserva" : "Ingreso"}</span>
                               </button>
                             );
                           })}
@@ -2980,12 +3077,12 @@ export default function TobiramaFinancialOS() {
                       {/* Large Glowing Confirm Button */}
                       <button
                         onClick={handleQuickRegister}
-                        disabled={parseFormattedCOP(quickAmount) === 0 || isScanning}
-                        className={`w-full py-3.5 rounded-2xl bg-gradient-to-r from-emerald-500 to-green-400 hover:from-emerald-400 hover:to-green-300 text-black font-bold tracking-widest uppercase text-xs shadow-lg shadow-emerald-500/5 transition-all active:scale-[0.99] flex items-center justify-center gap-1.5 cursor-pointer ${
-                          parseFormattedCOP(quickAmount) === 0 || isScanning ? "opacity-35 pointer-events-none" : ""
+                        disabled={parseFormattedCOP(quickAmount) === 0 || isScanning || isActionPending}
+                        className={`w-full py-3.5 rounded-2xl font-bold tracking-widest uppercase text-xs shadow-lg transition-all active:scale-[0.99] flex items-center justify-center gap-1.5 cursor-pointer ${visualFormConfig.confirmBtnBg} ${
+                          parseFormattedCOP(quickAmount) === 0 || isScanning || isActionPending ? "opacity-35 pointer-events-none" : ""
                         }`}
                       >
-                        Confirmar Transacción ⚡
+                        {visualFormConfig.confirmBtnText}
                       </button>
 
                       {quickSuccessMsg && (
