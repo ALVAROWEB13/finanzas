@@ -2,6 +2,25 @@ import { NextResponse } from "next/server";
 import { initDb, getTransactions } from "@/lib/db";
 import { authenticateRequest } from "@/lib/auth";
 
+// Función auxiliar para reintentar peticiones a Gemini con retraso exponencial ante un HTTP 429 (ResourceExhausted)
+async function fetchWithRetry(url: string, options: RequestInit, retries = 3, delay = 1200): Promise<Response> {
+  let lastResponse: Response | null = null;
+  for (let i = 0; i < retries; i++) {
+    const response = await fetch(url, options);
+    if (response.status === 429) {
+      lastResponse = response;
+      if (i < retries - 1) {
+        console.warn(`[Gemini API - Tips] Recibido 429. Reintentando en ${delay}ms... (Intento ${i + 1}/${retries})`);
+        await new Promise((res) => setTimeout(res, delay));
+        delay *= 2.5; // Backoff exponencial agresivo
+        continue;
+      }
+    }
+    return response;
+  }
+  return lastResponse!;
+}
+
 export async function GET(req: Request) {
   const auth = authenticateRequest(req);
   if (!auth) {
@@ -36,7 +55,8 @@ Cada tip tiene: titulo (corto, max 30 chars), consejo (específico y útil, máx
 Transacciones del usuario:
 ${JSON.stringify(recentTx, null, 2)}`;
 
-    const response = await fetch(url, {
+    // Realizar llamada con reintentos para mitigar errores 429
+    const response = await fetchWithRetry(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({

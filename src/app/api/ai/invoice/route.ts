@@ -1,6 +1,25 @@
 import { NextResponse } from "next/server";
 import { authenticateRequest } from "@/lib/auth";
 
+// Función auxiliar para reintentar peticiones a Gemini con retraso exponencial ante un HTTP 429 (ResourceExhausted)
+async function fetchWithRetry(url: string, options: RequestInit, retries = 3, delay = 1200): Promise<Response> {
+  let lastResponse: Response | null = null;
+  for (let i = 0; i < retries; i++) {
+    const response = await fetch(url, options);
+    if (response.status === 429) {
+      lastResponse = response;
+      if (i < retries - 1) {
+        console.warn(`[Gemini API - Invoice] Recibido 429. Reintentando en ${delay}ms... (Intento ${i + 1}/${retries})`);
+        await new Promise((res) => setTimeout(res, delay));
+        delay *= 2.5; // Backoff exponencial agresivo para disipar rate-limits
+        continue;
+      }
+    }
+    return response;
+  }
+  return lastResponse!;
+}
+
 export async function POST(req: Request) {
   const auth = authenticateRequest(req);
   if (!auth) {
@@ -46,7 +65,8 @@ export async function POST(req: Request) {
     const body = {
       system_instruction: {
         parts: [{
-          text: "Eres un experto en OCR de comprobantes de pago colombianos y latinoamericanos. Extrae siempre los datos reales visibles. NUNCA inventes valores. Si no puedes leer un campo, usa el valor por defecto indicado en el prompt."
+          text: `Eres un asistente experto de OCR especializado en extraer información de facturas, recibos, comprobantes de transferencias (Nequi, Daviplata, Bancolombia, etc.) y tickets de compra de Colombia y Latinoamérica.
+Tu objetivo es analizar la imagen y extraer los datos EXACTOS y VERÍDICOS. NUNCA debes alucinar o inventar valores. Si no se puede leer un campo con certeza, utiliza el valor por defecto indicado.`
         }]
       },
       contents: [{
@@ -55,24 +75,30 @@ export async function POST(req: Request) {
             inlineData: { mimeType, data: base64Data }
           },
           {
-            text: `Analiza esta imagen de factura, recibo o comprobante de pago y extrae los siguientes campos:
+            text: `Analiza detenidamente esta imagen de factura, recibo o comprobante de pago y extrae los siguientes campos con la mayor precisión posible:
 
-1. comercio: Nombre del establecimiento o empresa emisora. Default si no se ve: "Comercio"
-2. total: Valor total pagado como número entero en pesos COP, SIN puntos ni comas ni símbolos. Ejemplo: "$45.900" → 45900. Default: 0
-3. fecha: Fecha del comprobante en formato YYYY-MM-DD. Default: ${today}
-4. categoria: Elige UNA categoría de esta lista según el tipo de gasto:
-   - Alimentación (supermercados, restaurantes, domicilios)
-   - Transporte (gasolina, taxi, Uber, bus, peajes)
-   - Servicios (luz, agua, gas, internet, telefonía, arriendos)
-   - Entretenimiento (Netflix, Spotify, cine, juegos)
-   - Salud (farmacia, médico, laboratorio)
-   - Educación (cursos, libros, universidad)
-   - Vivienda (ferretería, muebles, ropa del hogar)
-   - Ahorro / Reserva (transferencias a ahorros)
-   - Ingresos (depósitos recibidos)
-5. descripcion: Descripción corta y precisa del gasto, máx 60 caracteres.
+1. comercio: Nombre del establecimiento comercial, empresa emisora o destinatario de la transferencia (por ejemplo, "Almacenes Éxito", "D1", "Gasolinera Copec", "Nequi Juan P.", etc.). Debe ser un nombre propio representativo. Si no se visualiza ninguno, usa "Comercio".
+2. total: El valor total neto pagado/transferido como número entero (en pesos COP). 
+   - Busca el total definitivo (a veces rotulado como "TOTAL", "PAGO TOTAL", "VALOR", "VALOR DE LA TRANSACCION", "Total a pagar", "Monto").
+   - Ignora montos intermedios como sub-totales, IVA o propinas a menos que sea el único valor disponible.
+   - OJO con los decimales: si dice por ejemplo "50.000,00" o "50000.00", el valor a retornar es 50000 (no 5000000). 
+   - Devuelve solo el número entero, sin símbolos de moneda ($), puntos, comas ni letras. Si no es legible o no hay monto, devuelve 0.
+3. fecha: Fecha en que se realizó la transacción en formato YYYY-MM-DD.
+   - Traduce formatos latinos/españoles de fecha (ej. "08/Jun/2026", "8 de junio de 2026", "08-06-26") al formato estándar YYYY-MM-DD.
+   - Si no se encuentra ninguna fecha legible en la imagen, usa la fecha de hoy: "${today}".
+4. categoria: Clasifica la transacción seleccionando exactamente UNA de las siguientes categorías según el comercio o concepto:
+   - Alimentación (comida, restaurantes, cafeterías, supermercados, D1, Éxito, Ara, Jumbo)
+   - Transporte (combustible, gasolina, taxis, Uber, parqueadero, peajes, pasajes)
+   - Servicios (servicios públicos, luz, agua, gas, planes de celular, internet, arriendo)
+   - Entretenimiento (cine, suscripciones como Netflix, Spotify, bares, videojuegos, salidas)
+   - Salud (droguería, farmacia, consultas médicas, laboratorios, medicamentos)
+   - Educación (colegio, universidad, cursos, libros, papelería)
+   - Vivienda (mantenimiento del hogar, ferretería, decoración, ropa)
+   - Ahorro / Reserva (dinero destinado a fondos de ahorro o reservas)
+   - Ingresos (si el comprobante representa un dinero recibido, consignación o abono)
+5. descripcion: Una descripción muy corta y concisa de lo comprado o pagado (máximo 60 caracteres), por ejemplo: "Compra de víveres", "Combustible para auto", "Pago de internet Claro", etc.
 
-Devuelve SOLO el JSON sin texto adicional.`
+La respuesta debe ser estrictamente un JSON válido con la estructura solicitada, sin bloques de código markdown (\`\`\`) ni texto explicativo.`
           }
         ]
       }],
@@ -92,7 +118,8 @@ Devuelve SOLO el JSON sin texto adicional.`
       }
     };
 
-    const geminiRes = await fetch(url, {
+    // Realizar llamada con reintentos para mitigar errores 429
+    const geminiRes = await fetchWithRetry(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body)

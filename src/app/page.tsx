@@ -1556,6 +1556,66 @@ export default function TobiramaFinancialOS() {
     }
   };
 
+  // --- AUXILIAR: COMPRESIÓN DE IMÁGENES LADO CLIENTE ---
+  const compressImage = (file: File): Promise<File> => {
+    return new Promise((resolve) => {
+      if (!file.type.startsWith("image/")) {
+        resolve(file); // Retornar archivo original si no es imagen
+        return;
+      }
+
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = (event) => {
+        const img = new Image();
+        img.src = event.target?.result as string;
+        img.onload = () => {
+          const canvas = document.createElement("canvas");
+          let width = img.width;
+          let height = img.height;
+          const maxDim = 1200; // Estandarizar resolución para optimizar tokens y peso
+
+          if (width > maxDim || height > maxDim) {
+            if (width > height) {
+              height = Math.round((height * maxDim) / width);
+              width = maxDim;
+            } else {
+              width = Math.round((width * maxDim) / height);
+              height = maxDim;
+            }
+          }
+
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext("2d");
+          if (!ctx) {
+            resolve(file);
+            return;
+          }
+
+          ctx.drawImage(img, 0, 0, width, height);
+          canvas.toBlob(
+            (blob) => {
+              if (blob) {
+                const compressedFile = new File([blob], file.name.replace(/\.[^/.]+$/, "") + ".jpg", {
+                  type: "image/jpeg",
+                  lastModified: Date.now(),
+                });
+                resolve(compressedFile);
+              } else {
+                resolve(file);
+              }
+            },
+            "image/jpeg",
+            0.85
+          );
+        };
+        img.onerror = () => resolve(file);
+      };
+      reader.onerror = () => resolve(file);
+    });
+  };
+
   // --- INVOICE UPLOAD SCANNER (Google Gemini AI Vision OCR) ---
   const handleInvoiceUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
@@ -1570,10 +1630,15 @@ export default function TobiramaFinancialOS() {
         setScanProgress(prev => prev < 88 ? prev + Math.random() * 12 : prev);
       }, 300);
 
-      const formData = new FormData();
-      formData.append("file", file);
-
       try {
+        // Comprimir imagen antes de subirla para mejorar velocidad y evitar límites de Vercel/Gemini
+        console.log(`[OCR] Tamaño original: ${(file.size / 1024).toFixed(1)} KB`);
+        const fileToUpload = await compressImage(file);
+        console.log(`[OCR] Tamaño comprimido: ${(fileToUpload.size / 1024).toFixed(1)} KB`);
+
+        const formData = new FormData();
+        formData.append("file", fileToUpload);
+
         const res = await fetch("/api/ai/invoice", {
           method: "POST",
           headers: getAuthHeader(),
@@ -3006,7 +3071,7 @@ export default function TobiramaFinancialOS() {
                                 {isScanning ? "Procesando con IA..." : "Toca para subir tu factura"}
                               </span>
                               <span className="text-[9px] text-slate-600">JPG, PNG o PDF · máx 5 MB</span>
-                              <input type="file" accept="image/*,application/pdf" onChange={handleInvoiceUpload} className="hidden" disabled={isScanning} />
+                              <input type="file" accept="image/*" onChange={handleInvoiceUpload} className="hidden" disabled={isScanning} />
                             </label>
                           )}
 
