@@ -9,7 +9,10 @@ export async function POST(req: Request) {
 
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
-    return NextResponse.json({ error: "API Key de Gemini no configurada en el servidor" }, { status: 500 });
+    return NextResponse.json(
+      { error: "API Key de Gemini no configurada en el servidor" },
+      { status: 500 }
+    );
   }
 
   try {
@@ -21,81 +24,107 @@ export async function POST(req: Request) {
 
     // Convert file to base64
     const bytes = await file.arrayBuffer();
-    const buffer = Buffer.from(bytes);
-    const base64Data = buffer.toString("base64");
-    const mimeType = file.type;
+    const base64Data = Buffer.from(bytes).toString("base64");
 
-    // Call Gemini 2.5 Flash API via native fetch
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+    // Normalize MIME type — Gemini vision needs image/jpeg or image/png
+    let mimeType = file.type || "image/jpeg";
+    if (mimeType === "application/octet-stream") mimeType = "image/jpeg";
 
-    const response = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
+    // PDFs are not supported as inline image data for the REST API
+    if (mimeType === "application/pdf") {
+      return NextResponse.json(
+        { error: "Por favor sube una foto JPG o PNG de la factura, los PDFs no se pueden escanear directamente." },
+        { status: 400 }
+      );
+    }
+
+    const today = new Date().toISOString().split("T")[0];
+
+    // gemini-2.0-flash: stable, fast multimodal model with JSON output support
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+
+    const body = {
+      system_instruction: {
+        parts: [{
+          text: "Eres un experto en OCR de comprobantes de pago colombianos y latinoamericanos. Extrae siempre los datos reales visibles. NUNCA inventes valores. Si no puedes leer un campo, usa el valor por defecto indicado en el prompt."
+        }]
       },
-      body: JSON.stringify({
-        system_instruction: {
-          parts: [{
-            text: "Eres un experto en OCR y extracción de datos de comprobantes de pago colombianos y latinoamericanos. Tu trabajo es analizar imágenes de facturas, recibos, tickets, y comprobantes electrónicos con máxima precisión. Siempre extraes los datos reales visibles en el documento — NUNCA inventas valores."
-          }]
-        },
-        contents: [
+      contents: [{
+        parts: [
           {
-            parts: [
-              {
-                inlineData: {
-                  mimeType: mimeType,
-                  data: base64Data
-                }
-              },
-              {
-                text: `Analiza este comprobante de pago con máxima precisión. Extrae EXACTAMENTE los datos que aparecen en el documento:
+            inlineData: { mimeType, data: base64Data }
+          },
+          {
+            text: `Analiza esta imagen de factura, recibo o comprobante de pago y extrae los siguientes campos:
 
-1. COMERCIO: El nombre real del establecimiento o empresa emisora del comprobante (ej: "Rappi", "Éxito", "Claro", "Netflix"). Si no hay nombre visible, usa "Comercio desconocido".
+1. comercio: Nombre del establecimiento o empresa emisora. Default si no se ve: "Comercio"
+2. total: Valor total pagado como número entero en pesos COP, SIN puntos ni comas ni símbolos. Ejemplo: "$45.900" → 45900. Default: 0
+3. fecha: Fecha del comprobante en formato YYYY-MM-DD. Default: ${today}
+4. categoria: Elige UNA categoría de esta lista según el tipo de gasto:
+   - Alimentación (supermercados, restaurantes, domicilios)
+   - Transporte (gasolina, taxi, Uber, bus, peajes)
+   - Servicios (luz, agua, gas, internet, telefonía, arriendos)
+   - Entretenimiento (Netflix, Spotify, cine, juegos)
+   - Salud (farmacia, médico, laboratorio)
+   - Educación (cursos, libros, universidad)
+   - Vivienda (ferretería, muebles, ropa del hogar)
+   - Ahorro / Reserva (transferencias a ahorros)
+   - Ingresos (depósitos recibidos)
+5. descripcion: Descripción corta y precisa del gasto, máx 60 caracteres.
 
-2. TOTAL: El valor total a pagar o pagado en pesos colombianos (COP) como número entero SIN puntos, comas ni símbolos. Busca palabras como "Total", "Total a pagar", "Valor", "Subtotal". Si hay IVA incluido, usa el total final. Ejemplo: si dice "$150.000" devuelve 150000.
-
-3. FECHA: La fecha del comprobante en formato YYYY-MM-DD. Si no hay fecha, usa la de hoy: ${new Date().toISOString().split("T")[0]}.
-
-4. CATEGORIA: Asigna UNA de estas categorías según el tipo de gasto: Vivienda, Transporte, Servicios, Alimentación, Entretenimiento, Salud, Educación, Ahorro / Reserva, Ingresos. Ejemplos: supermercados/restaurantes=Alimentación, Netflix/Spotify=Entretenimiento, gasolina/taxi=Transporte, recibo luz/agua/internet=Servicios.
-
-5. DESCRIPCION: Una descripción corta y precisa del gasto (máx 60 caracteres), como "Compra de mercado", "Recarga de celular", "Pago de membresía".`
-              }
-            ]
+Devuelve SOLO el JSON sin texto adicional.`
           }
-        ],
-        generationConfig: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: "object",
-            properties: {
-              comercio: { type: "string" },
-              total: { type: "integer" },
-              fecha: { type: "string" },
-              categoria: { type: "string" },
-              descripcion: { type: "string" }
-            },
-            required: ["comercio", "total", "fecha", "categoria", "descripcion"]
-          }
+        ]
+      }],
+      generationConfig: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: "object",
+          properties: {
+            comercio:    { type: "string" },
+            total:       { type: "integer" },
+            fecha:       { type: "string" },
+            categoria:   { type: "string" },
+            descripcion: { type: "string" }
+          },
+          required: ["comercio", "total", "fecha", "categoria", "descripcion"]
         }
-      })
+      }
+    };
+
+    const geminiRes = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
     });
 
-    if (!response.ok) {
-      const errText = await response.text();
-      throw new Error(`API Gemini falló con estado ${response.status}: ${errText}`);
+    if (!geminiRes.ok) {
+      const errText = await geminiRes.text();
+      console.error("[invoice] Gemini error:", geminiRes.status, errText);
+      throw new Error(`Gemini respondió ${geminiRes.status}: ${errText}`);
     }
 
-    const resJson = await response.json();
-    const text = resJson.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!text) {
-      throw new Error("Respuesta vacía o estructura incorrecta de Gemini API");
+    const resJson = await geminiRes.json();
+    console.log("[invoice] Gemini response:", JSON.stringify(resJson).slice(0, 500));
+
+    // With responseMimeType=application/json the content is a JSON string inside parts[0].text
+    const part = resJson.candidates?.[0]?.content?.parts?.[0];
+    if (!part) {
+      throw new Error("Gemini no devolvió candidatos en la respuesta");
     }
 
-    const parsedData = JSON.parse(text);
-    return NextResponse.json(parsedData);
+    let data: Record<string, unknown>;
+    if (typeof part.text === "string") {
+      data = JSON.parse(part.text);
+    } else {
+      // Fallback: some builds return object directly
+      data = part as Record<string, unknown>;
+    }
+
+    return NextResponse.json(data);
+
   } catch (err: any) {
-    console.error("Error en API de escaneo de facturas:", err);
+    console.error("[invoice] Error:", err.message);
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }

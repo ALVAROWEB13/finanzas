@@ -17,7 +17,7 @@ export async function GET(req: Request) {
     await initDb();
     const transactions = await getTransactions(auth.userId);
 
-    // Simplify transactions to stay within context windows and keep prompt clean
+    // Simplify transactions to stay within context windows
     const recentTx = transactions.slice(0, 30).map(t => ({
       fecha: t.date,
       descripcion: t.description,
@@ -26,32 +26,21 @@ export async function GET(req: Request) {
       tipo: t.type
     }));
 
-    // Call Gemini via native fetch
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
 
-    const prompt = `
-      Eres un coach de finanzas personales altamente inteligente y analítico llamado "Tobirama AI".
-      Analiza las siguientes últimas transacciones de este usuario y dale exactamente 3 consejos o tips de finanzas útiles y directos en español.
-      Los tips deben basarse en comportamientos reales observados (ej. si tiene gastos altos en alguna categoría, si su ahorro es óptimo, o consejos para mantener un presupuesto sano).
-      Cada tip debe tener un título, un consejo detallado pero conciso, y una gravedad: INFO (azul, informativo), WARNING (rojo, advertencia si hay gastos excesivos), o SUCCESS (verde, felicitación por ahorro o control).
+    const prompt = `Eres "Tobirama AI", un coach de finanzas personales para colombianos.
+Analiza las siguientes transacciones recientes y genera exactamente 3 tips financieros personalizados en español.
+Basa los tips en patrones reales que veas (categorías con mucho gasto, nivel de ahorro, etc.).
+Cada tip tiene: titulo (corto, max 30 chars), consejo (específico y útil, máx 120 chars), gravedad (INFO=informativo, WARNING=alerta por exceso de gasto, SUCCESS=felicitación por buen hábito).
 
-      Transacciones del usuario:
-      ${JSON.stringify(recentTx, null, 2)}
-    `;
+Transacciones del usuario:
+${JSON.stringify(recentTx, null, 2)}`;
 
     const response = await fetch(url, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        contents: [
-          {
-            parts: [
-              { text: prompt }
-            ]
-          }
-        ],
+        contents: [{ parts: [{ text: prompt }] }],
         generationConfig: {
           responseMimeType: "application/json",
           responseSchema: {
@@ -59,8 +48,8 @@ export async function GET(req: Request) {
             items: {
               type: "object",
               properties: {
-                titulo: { type: "string" },
-                consejo: { type: "string" },
+                titulo:   { type: "string" },
+                consejo:  { type: "string" },
                 gravedad: { type: "string", enum: ["INFO", "WARNING", "SUCCESS"] }
               },
               required: ["titulo", "consejo", "gravedad"]
@@ -72,19 +61,27 @@ export async function GET(req: Request) {
 
     if (!response.ok) {
       const errText = await response.text();
-      throw new Error(`API Gemini falló con estado ${response.status}: ${errText}`);
+      console.error("[tips] Gemini error:", response.status, errText);
+      throw new Error(`Gemini respondió ${response.status}: ${errText}`);
     }
 
     const resJson = await response.json();
-    const text = resJson.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!text) {
-      throw new Error("Respuesta vacía o estructura incorrecta de Gemini API");
+    console.log("[tips] Gemini response:", JSON.stringify(resJson).slice(0, 400));
+
+    const part = resJson.candidates?.[0]?.content?.parts?.[0];
+    if (!part) throw new Error("Gemini no devolvió candidatos en la respuesta");
+
+    // With responseMimeType=application/json, Gemini puts a JSON string in part.text
+    let tips: unknown[];
+    if (typeof part.text === "string") {
+      tips = JSON.parse(part.text);
+    } else {
+      tips = part as unknown[];
     }
 
-    const tips = JSON.parse(text);
     return NextResponse.json(tips);
   } catch (err: any) {
-    console.error("Error en API de tips con IA:", err);
+    console.error("[tips] Error:", err.message);
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }
