@@ -1576,7 +1576,7 @@ export default function TobiramaFinancialOS() {
       try {
         const res = await fetch("/api/ai/invoice", {
           method: "POST",
-          headers: { "x-user-id": currentUser.username || currentUser.fullName || "default" },
+          headers: getAuthHeader(),
           body: formData
         });
         const data = await res.json();
@@ -1596,7 +1596,8 @@ export default function TobiramaFinancialOS() {
         showToast(`Factura de ${data.comercio} leída correctamente`, "success");
       } catch (err: any) {
         setScanProgress(0);
-        showToast("No se pudo leer la factura. Verifica la imagen e intenta de nuevo.", "warning");
+        const msg = err?.message || "Error desconocido";
+        showToast(`Error al escanear: ${msg.slice(0, 80)}`, "warning");
         console.error("Error al escanear factura:", err);
       } finally {
         clearInterval(progressInterval);
@@ -1610,9 +1611,7 @@ export default function TobiramaFinancialOS() {
     setIsLoadingTips(true);
     try {
       const res = await fetch("/api/ai/tips", {
-        headers: {
-          "x-user-id": currentUser.username || currentUser.fullName || "default"
-        }
+        headers: getAuthHeader()
       });
       const data = await res.json();
       if (data.error) throw new Error(data.error);
