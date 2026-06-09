@@ -353,6 +353,8 @@ export default function TobiramaFinancialOS() {
   // Invoice States
   const [isScanning, setIsScanning] = useState(false);
   const [scanSuccess, setScanSuccess] = useState(false);
+  const [scanProgress, setScanProgress] = useState(0);
+  const [scanResult, setScanResult] = useState<{comercio: string; total: number; fecha: string; categoria: string; descripcion: string} | null>(null);
   const [aiTips, setAiTips] = useState<{titulo: string; consejo: string; gravedad: "INFO" | "WARNING" | "SUCCESS"}[]>([]);
   const [isLoadingTips, setIsLoadingTips] = useState(false);
 
@@ -1033,22 +1035,16 @@ export default function TobiramaFinancialOS() {
       `[${timeStr}] TRANSACCIÓN: Registro flash de ${formatCOP(amountVal)} en la categoría '${finalCategory}' añadido.`
     ]);
 
-    try {
-      const res = await fetch("/api/transactions", {
-        method: "POST",
-        headers: getAuthHeaderJSON(),
-        body: JSON.stringify(newTx),
-      });
-      if (!res.ok) {
-        throw new Error("Failed to save transaction to DB");
-      }
-      fetchFromServer(); // Refresh to ensure perfect sync
-    } catch (err) {
-      console.error("Failed to sync new transaction with DB:", err);
+    // Fire-and-forget DB save — no re-fetch to keep UI instant
+    fetch("/api/transactions", {
+      method: "POST",
+      headers: getAuthHeaderJSON(),
+      body: JSON.stringify(newTx),
+    }).catch(() => {
       showToast("Error de red al guardar en la base de datos.", "warning");
-    } finally {
+    }).finally(() => {
       setIsActionPending(false);
-    }
+    });
   };
 
   // REACTIVE TRANSACTION DELETION (Clear data cleanly)
@@ -1566,50 +1562,44 @@ export default function TobiramaFinancialOS() {
       const file = e.target.files[0];
       setIsScanning(true);
       setScanSuccess(false);
-      
+      setScanResult(null);
+      setScanProgress(0);
+
+      // Animate progress bar while waiting for API
+      const progressInterval = setInterval(() => {
+        setScanProgress(prev => prev < 88 ? prev + Math.random() * 12 : prev);
+      }, 300);
+
       const formData = new FormData();
       formData.append("file", file);
 
       try {
         const res = await fetch("/api/ai/invoice", {
           method: "POST",
-          headers: {
-            "x-user-id": currentUser.username || currentUser.fullName || "default"
-          },
+          headers: { "x-user-id": currentUser.username || currentUser.fullName || "default" },
           body: formData
         });
-
         const data = await res.json();
         if (data.error) throw new Error(data.error);
-        
-        // Populate the capture form with AI extracted fields
-        setQuickAmount(formatNumberCOP(data.total || data.amount || 0));
-        setQuickDescription(`${data.comercio || "Factura"}: ${data.descripcion || "Compra"}`);
-        
-        const cat = data.categoria || data.category;
-        if (cat) {
-          setQuickCategory(cat as Category);
-        }
+
+        setScanProgress(100);
+        setScanResult(data);
+
+        // Populate the capture form fields
+        setQuickAmount(formatNumberCOP(data.total || 0));
+        setQuickDescription(`${data.comercio}: ${data.descripcion}`);
+        const cat = data.categoria;
+        if (cat) setQuickCategory(cat as Category);
         setQuickType("Gasto Extra");
+        if (data.fecha) setQuickDate(data.fecha);
         setScanSuccess(true);
+        showToast(`Factura de ${data.comercio} leída correctamente`, "success");
       } catch (err: any) {
-        console.error("Error al escanear comprobante con IA:", err);
-        // Fallback to simulation to preserve layout/flow on network or key issues
-        setTimeout(() => {
-          const mockInvoice = {
-            amount: 145000,
-            description: "Factura Éxito #8841",
-            category: "Estilo de Vida / Mercado" as Category,
-            method: "Débito" as PaymentMethod
-          };
-          setQuickAmount(formatNumberCOP(mockInvoice.amount));
-          setQuickDescription(mockInvoice.description);
-          setQuickCategory(mockInvoice.category);
-          setQuickMethod(mockInvoice.method);
-          setQuickType("Gasto Extra");
-          setScanSuccess(true);
-        }, 1200);
+        setScanProgress(0);
+        showToast("No se pudo leer la factura. Verifica la imagen e intenta de nuevo.", "warning");
+        console.error("Error al escanear factura:", err);
       } finally {
+        clearInterval(progressInterval);
         setIsScanning(false);
       }
     }
@@ -3003,32 +2993,76 @@ export default function TobiramaFinancialOS() {
                       )}
 
                       {inputMode === "invoice" && (
-                        /* Invoice Upload scan panel */
-                        <div className="py-3 border-t border-white/[0.03] text-center space-y-3">
-                          <label className="border border-dashed border-white/[0.06] hover:border-white/[0.12] rounded-2xl p-5 flex flex-col items-center justify-center gap-1.5 cursor-pointer transition-all bg-[#090a0c]/20 hover:bg-[#090a0c]/45">
-                            <Upload className="h-4.5 w-4.5 text-slate-500" />
-                            <span className="text-[11px] font-mono text-slate-300">Arrastra tu factura aquí</span>
-                            <span className="text-[9px] text-slate-600">PDF, JPG o PNG hasta 5MB</span>
-                            <input
-                              type="file"
-                              accept="image/*,application/pdf"
-                              onChange={handleInvoiceUpload}
-                              className="hidden"
-                              disabled={isScanning}
-                            />
-                          </label>
+                        <div className="border-t border-white/[0.03] space-y-3 pt-3">
 
-                          <div className="text-[10px] font-mono text-slate-500">
-                            {isScanning ? (
-                              <span className="text-blue-400 animate-pulse">Analizando estructura de datos con OCR...</span>
-                            ) : scanSuccess ? (
-                              <span className="text-emerald-400 flex items-center justify-center gap-1">
-                                <Check className="h-3.5 w-3.5" /> Factura procesada correctamente.
+                          {/* Drop zone */}
+                          {!scanSuccess && (
+                            <label className={`border border-dashed rounded-2xl p-5 flex flex-col items-center justify-center gap-2 transition-all ${
+                              isScanning
+                                ? "border-blue-500/40 bg-blue-500/[0.03] cursor-not-allowed"
+                                : "border-white/[0.06] hover:border-white/[0.14] bg-[#090a0c]/20 hover:bg-[#090a0c]/45 cursor-pointer"
+                            }`}>
+                              <Upload className={`h-5 w-5 ${isScanning ? "text-blue-400" : "text-slate-500"}`} />
+                              <span className="text-[11px] font-mono text-slate-300">
+                                {isScanning ? "Procesando con IA..." : "Toca para subir tu factura"}
                               </span>
-                            ) : (
-                              "Sube tu comprobante de egreso para auto-llenar los campos."
-                            )}
-                          </div>
+                              <span className="text-[9px] text-slate-600">JPG, PNG o PDF · máx 5 MB</span>
+                              <input type="file" accept="image/*,application/pdf" onChange={handleInvoiceUpload} className="hidden" disabled={isScanning} />
+                            </label>
+                          )}
+
+                          {/* Progress bar */}
+                          {isScanning && (
+                            <div className="space-y-1.5">
+                              <div className="flex justify-between text-[9px] font-mono text-slate-500">
+                                <span className="text-blue-400 animate-pulse">🔍 Gemini AI analizando imagen...</span>
+                                <span>{Math.round(scanProgress)}%</span>
+                              </div>
+                              <div className="h-1.5 w-full bg-zinc-900 rounded-full overflow-hidden">
+                                <motion.div
+                                  className="h-full bg-gradient-to-r from-blue-500 to-cyan-400 rounded-full"
+                                  animate={{ width: `${scanProgress}%` }}
+                                  transition={{ duration: 0.4, ease: "easeOut" }}
+                                />
+                              </div>
+                              <p className="text-[8.5px] text-slate-600 font-mono text-center">Extrayendo comercio, monto, fecha y categoría...</p>
+                            </div>
+                          )}
+
+                          {/* Result preview card */}
+                          {scanSuccess && scanResult && (
+                            <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/[0.03] p-3 space-y-2">
+                              <div className="flex items-center gap-1.5 text-emerald-400 text-[9px] font-mono font-bold uppercase">
+                                <Check className="h-3.5 w-3.5" />
+                                <span>Factura leída correctamente</span>
+                              </div>
+                              <div className="grid grid-cols-2 gap-1.5 text-[9px] font-mono">
+                                <div className="bg-black/40 rounded-lg p-2">
+                                  <span className="text-slate-600 block">COMERCIO</span>
+                                  <span className="text-slate-200 font-bold truncate block">{scanResult.comercio}</span>
+                                </div>
+                                <div className="bg-black/40 rounded-lg p-2">
+                                  <span className="text-slate-600 block">TOTAL</span>
+                                  <span className="text-emerald-400 font-bold block">{formatCOP(scanResult.total)}</span>
+                                </div>
+                                <div className="bg-black/40 rounded-lg p-2">
+                                  <span className="text-slate-600 block">FECHA</span>
+                                  <span className="text-slate-200 font-bold block">{scanResult.fecha}</span>
+                                </div>
+                                <div className="bg-black/40 rounded-lg p-2">
+                                  <span className="text-slate-600 block">CATEGORÍA</span>
+                                  <span className="text-slate-200 font-bold truncate block">{scanResult.categoria}</span>
+                                </div>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => { setScanSuccess(false); setScanResult(null); setScanProgress(0); }}
+                                className="text-[8px] font-mono text-slate-600 hover:text-slate-400 uppercase tracking-widest w-full text-center cursor-pointer"
+                              >
+                                Escanear otra factura
+                              </button>
+                            </div>
+                          )}
                         </div>
                       )}
 

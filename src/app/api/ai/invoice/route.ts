@@ -34,6 +34,11 @@ export async function POST(req: Request) {
         "Content-Type": "application/json"
       },
       body: JSON.stringify({
+        system_instruction: {
+          parts: [{
+            text: "Eres un experto en OCR y extracción de datos de comprobantes de pago colombianos y latinoamericanos. Tu trabajo es analizar imágenes de facturas, recibos, tickets, y comprobantes electrónicos con máxima precisión. Siempre extraes los datos reales visibles en el documento — NUNCA inventas valores."
+          }]
+        },
         contents: [
           {
             parts: [
@@ -44,7 +49,17 @@ export async function POST(req: Request) {
                 }
               },
               {
-                text: "Analiza esta factura o comprobante de gasto. Extrae el nombre del comercio emisor, el valor total cobrado (como número entero sin puntos, comas ni símbolos), la fecha de emisión (en formato YYYY-MM-DD) y clasifícalo en una categoría apropiada (Vivienda, Transporte, Servicios, Alimentación, Entretenimiento, Salud, Educación, Ahorro / Reserva, Ingresos)."
+                text: `Analiza este comprobante de pago con máxima precisión. Extrae EXACTAMENTE los datos que aparecen en el documento:
+
+1. COMERCIO: El nombre real del establecimiento o empresa emisora del comprobante (ej: "Rappi", "Éxito", "Claro", "Netflix"). Si no hay nombre visible, usa "Comercio desconocido".
+
+2. TOTAL: El valor total a pagar o pagado en pesos colombianos (COP) como número entero SIN puntos, comas ni símbolos. Busca palabras como "Total", "Total a pagar", "Valor", "Subtotal". Si hay IVA incluido, usa el total final. Ejemplo: si dice "$150.000" devuelve 150000.
+
+3. FECHA: La fecha del comprobante en formato YYYY-MM-DD. Si no hay fecha, usa la de hoy: ${new Date().toISOString().split("T")[0]}.
+
+4. CATEGORIA: Asigna UNA de estas categorías según el tipo de gasto: Vivienda, Transporte, Servicios, Alimentación, Entretenimiento, Salud, Educación, Ahorro / Reserva, Ingresos. Ejemplos: supermercados/restaurantes=Alimentación, Netflix/Spotify=Entretenimiento, gasolina/taxi=Transporte, recibo luz/agua/internet=Servicios.
+
+5. DESCRIPCION: Una descripción corta y precisa del gasto (máx 60 caracteres), como "Compra de mercado", "Recarga de celular", "Pago de membresía".`
               }
             ]
           }
