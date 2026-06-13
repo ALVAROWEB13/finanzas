@@ -344,6 +344,7 @@ export default function TobiramaFinancialOS() {
     return `${now.getFullYear()}-${mm}`;
   });
   const [quickSuccessMsg, setQuickSuccessMsg] = useState(false);
+  const [justSaved, setJustSaved] = useState(false);
 
   // Voice States
   const [isListening, setIsListening] = useState(false);
@@ -1028,6 +1029,9 @@ export default function TobiramaFinancialOS() {
 
     // Show high-visibility success feedback instantly
     showToast(`Transacción de ${formatCOP(amountVal)} registrada con éxito.`, "success");
+    setQuickSuccessMsg(true);
+    setJustSaved(true);
+    setTimeout(() => { setQuickSuccessMsg(false); setJustSaved(false); }, 2200);
 
     const timeStr = new Date().toLocaleTimeString();
     setTerminalLogs((prev) => [
@@ -1556,11 +1560,11 @@ export default function TobiramaFinancialOS() {
     }
   };
 
-  // --- AUXILIAR: COMPRESIÓN DE IMÁGENES LADO CLIENTE ---
-  const compressImage = (file: File): Promise<File> => {
+  // --- AUXILIAR: COMPRESIÓN + VALIDACIÓN DE CALIDAD DE IMAGEN (CLIENTE) ---
+  const compressImage = (file: File): Promise<{ file: File; lowLight: boolean }> => {
     return new Promise((resolve) => {
       if (!file.type.startsWith("image/")) {
-        resolve(file); // Retornar archivo original si no es imagen
+        resolve({ file, lowLight: false });
         return;
       }
 
@@ -1573,7 +1577,7 @@ export default function TobiramaFinancialOS() {
           const canvas = document.createElement("canvas");
           let width = img.width;
           let height = img.height;
-          const maxDim = 1200; // Estandarizar resolución para optimizar tokens y peso
+          const maxDim = 1200;
 
           if (width > maxDim || height > maxDim) {
             if (width > height) {
@@ -1589,11 +1593,33 @@ export default function TobiramaFinancialOS() {
           canvas.height = height;
           const ctx = canvas.getContext("2d");
           if (!ctx) {
-            resolve(file);
+            resolve({ file, lowLight: false });
             return;
           }
 
           ctx.drawImage(img, 0, 0, width, height);
+
+          // Detección de luminosidad: muestrear píxeles y calcular brillo promedio
+          let lowLight = false;
+          try {
+            const sampleW = Math.min(width, 200);
+            const sampleH = Math.min(height, 200);
+            const imageData = ctx.getImageData(
+              Math.floor((width - sampleW) / 2),
+              Math.floor((height - sampleH) / 2),
+              sampleW, sampleH
+            );
+            let total = 0;
+            const data = imageData.data;
+            const pixels = data.length / 4;
+            for (let i = 0; i < data.length; i += 4) {
+              // Luminosidad perceptual (fórmula estándar)
+              total += 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+            }
+            const avgBrightness = total / pixels;
+            lowLight = avgBrightness < 55; // < 55/255 = muy oscuro
+          } catch (_) { /* canvas tainted, ignorar */ }
+
           canvas.toBlob(
             (blob) => {
               if (blob) {
@@ -1601,73 +1627,94 @@ export default function TobiramaFinancialOS() {
                   type: "image/jpeg",
                   lastModified: Date.now(),
                 });
-                resolve(compressedFile);
+                resolve({ file: compressedFile, lowLight });
               } else {
-                resolve(file);
+                resolve({ file, lowLight });
               }
             },
             "image/jpeg",
-            0.85
+            0.88
           );
         };
-        img.onerror = () => resolve(file);
+        img.onerror = () => resolve({ file, lowLight: false });
       };
-      reader.onerror = () => resolve(file);
+      reader.onerror = () => resolve({ file, lowLight: false });
     });
   };
 
   // --- INVOICE UPLOAD SCANNER (Google Gemini AI Vision OCR) ---
+  const invoiceInputRef = React.useRef<HTMLInputElement>(null);
+
   const handleInvoiceUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0) {
-      const file = e.target.files[0];
-      setIsScanning(true);
-      setScanSuccess(false);
-      setScanResult(null);
-      setScanProgress(0);
+    if (!e.target.files || e.target.files.length === 0) return;
+    const file = e.target.files[0];
 
-      // Animate progress bar while waiting for API
-      const progressInterval = setInterval(() => {
-        setScanProgress(prev => prev < 88 ? prev + Math.random() * 12 : prev);
-      }, 300);
+    setIsScanning(true);
+    setScanSuccess(false);
+    setScanResult(null);
+    setScanProgress(0);
 
-      try {
-        // Comprimir imagen antes de subirla para mejorar velocidad y evitar límites de Vercel/Gemini
-        console.log(`[OCR] Tamaño original: ${(file.size / 1024).toFixed(1)} KB`);
-        const fileToUpload = await compressImage(file);
-        console.log(`[OCR] Tamaño comprimido: ${(fileToUpload.size / 1024).toFixed(1)} KB`);
+    const progressInterval = setInterval(() => {
+      setScanProgress(prev => prev < 85 ? prev + Math.random() * 10 : prev);
+    }, 400);
 
-        const formData = new FormData();
-        formData.append("file", fileToUpload);
+    try {
+      // Comprimir y validar luminosidad antes de enviar
+      console.log(`[OCR] Original: ${(file.size / 1024).toFixed(1)} KB`);
+      const { file: fileToUpload, lowLight } = await compressImage(file);
+      console.log(`[OCR] Comprimido: ${(fileToUpload.size / 1024).toFixed(1)} KB | Poca luz: ${lowLight}`);
 
-        const res = await fetch("/api/ai/invoice", {
-          method: "POST",
-          headers: getAuthHeader(),
-          body: formData
-        });
-        const data = await res.json();
-        if (data.error) throw new Error(data.error);
-
-        setScanProgress(100);
-        setScanResult(data);
-
-        // Populate the capture form fields
-        setQuickAmount(formatNumberCOP(data.total || 0));
-        setQuickDescription(`${data.comercio}: ${data.descripcion}`);
-        const cat = data.categoria;
-        if (cat) setQuickCategory(cat as Category);
-        setQuickType("Gasto Extra");
-        if (data.fecha) setQuickDate(data.fecha);
-        setScanSuccess(true);
-        showToast(`Factura de ${data.comercio} leída correctamente`, "success");
-      } catch (err: any) {
-        setScanProgress(0);
-        const msg = err?.message || "Error desconocido";
-        showToast(`Error al escanear: ${msg.slice(0, 80)}`, "warning");
-        console.error("Error al escanear factura:", err);
-      } finally {
-        clearInterval(progressInterval);
-        setIsScanning(false);
+      // Advertir al usuario si detectamos poca luz (pero seguimos intentando)
+      if (lowLight) {
+        showToast("⚠️ La foto parece oscura. Para mejores resultados usa buena iluminación.", "warning");
       }
+
+      const formData = new FormData();
+      formData.append("file", fileToUpload);
+
+      const res = await fetch("/api/ai/invoice", {
+        method: "POST",
+        headers: getAuthHeader(),
+        body: formData
+      });
+
+      const data = await res.json();
+
+      // Error especial: imagen de mala calidad (detectado por Gemini)
+      if (data.error === "imagen_mala") {
+        setScanProgress(0);
+        showToast("📷 " + (data.mensaje || "La foto no es suficientemente clara. Intenta con mejor luz y enfoque."), "warning");
+        // Resetear input para que el usuario pueda intentar de nuevo
+        if (invoiceInputRef.current) invoiceInputRef.current.value = "";
+        return;
+      }
+
+      if (data.error) throw new Error(data.error);
+
+      setScanProgress(100);
+      setScanResult(data);
+
+      // Rellenar el formulario con los datos extraídos
+      setQuickAmount(formatNumberCOP(data.total || 0));
+      setQuickDescription(`${data.comercio}: ${data.descripcion}`);
+      if (data.categoria) setQuickCategory(data.categoria as Category);
+      setQuickType("Gasto Extra");
+      if (data.fecha) setQuickDate(data.fecha);
+      setScanSuccess(true);
+
+      const qualityNote = data.calidad_imagen === "REGULAR" ? " (calidad regular, verifica los datos)" : "";
+      showToast(`✅ Factura de ${data.comercio} leída correctamente${qualityNote}`, "success");
+
+    } catch (err: any) {
+      setScanProgress(0);
+      const msg = err?.message || "Error desconocido";
+      showToast(`Error al escanear: ${msg.slice(0, 90)}`, "warning");
+      console.error("[OCR] Error:", err);
+    } finally {
+      clearInterval(progressInterval);
+      setIsScanning(false);
+      // Resetear el input de archivo para permitir subir la misma foto de nuevo
+      if (invoiceInputRef.current) invoiceInputRef.current.value = "";
     }
   };
 
@@ -2949,7 +2996,8 @@ export default function TobiramaFinancialOS() {
                         />
                       </div>
 
-                      {/* INPUT MODES ROUTING */}
+                      {/* INPUT MODES ROUTING — min-h evita el brinco al cambiar de modo */}
+                      <div className="min-h-[200px]">
                       {inputMode === "keypad" && (
                         <div className="space-y-3 pt-1 border-t border-white/[0.03]">
                           {/* Quick shortcuts row */}
@@ -3070,8 +3118,9 @@ export default function TobiramaFinancialOS() {
                               <span className="text-[11px] font-mono text-slate-300">
                                 {isScanning ? "Procesando con IA..." : "Toca para subir tu factura"}
                               </span>
-                              <span className="text-[9px] text-slate-600">JPG, PNG o PDF · máx 5 MB</span>
-                              <input type="file" accept="image/*" onChange={handleInvoiceUpload} className="hidden" disabled={isScanning} />
+                              <span className="text-[9px] text-slate-600">Toma o sube una foto de la factura</span>
+                              <span className="text-[8px] text-slate-700">💡 Necesitas buena iluminación y la foto enfocada</span>
+                              <input ref={invoiceInputRef} type="file" accept="image/*" capture="environment" onChange={handleInvoiceUpload} className="hidden" disabled={isScanning} />
                             </label>
                           )}
 
@@ -3129,6 +3178,8 @@ export default function TobiramaFinancialOS() {
                           )}
                         </div>
                       )}
+
+                      </div>{/* end min-h input mode container */}
 
                       {/* Category Selector Grid */}
                       <div className="space-y-2">
@@ -3255,12 +3306,16 @@ export default function TobiramaFinancialOS() {
                       {/* Large Glowing Confirm Button */}
                       <button
                         onClick={handleQuickRegister}
-                        disabled={parseFormattedCOP(quickAmount) === 0 || isScanning || isActionPending}
-                        className={`w-full py-3.5 rounded-2xl font-bold tracking-widest uppercase text-xs shadow-lg transition-all active:scale-[0.99] flex items-center justify-center gap-1.5 cursor-pointer ${visualFormConfig.confirmBtnBg} ${
+                        disabled={parseFormattedCOP(quickAmount) === 0 || isScanning || isActionPending || justSaved}
+                        className={`w-full py-3.5 rounded-2xl font-bold tracking-widest uppercase text-xs shadow-lg transition-all duration-300 active:scale-[0.99] flex items-center justify-center gap-1.5 cursor-pointer ${
+                          justSaved
+                            ? "bg-emerald-500/20 border border-emerald-400/40 text-emerald-300 scale-[0.99]"
+                            : visualFormConfig.confirmBtnBg
+                        } ${
                           parseFormattedCOP(quickAmount) === 0 || isScanning || isActionPending ? "opacity-35 pointer-events-none" : ""
                         }`}
                       >
-                        {visualFormConfig.confirmBtnText}
+                        {justSaved ? "✓ ¡Guardado!" : visualFormConfig.confirmBtnText}
                       </button>
 
                       {quickSuccessMsg && (
