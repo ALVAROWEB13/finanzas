@@ -369,7 +369,7 @@ export default function TobiramaFinancialOS() {
   const [terminalLogs, setTerminalLogs] = useState<string[]>([
     "[08:42:11] SYSTEM_BOOT: Módulos financieros de Tobirama iniciados.",
     "[09:15:42] SYNC: Libro mayor sincronizado con servidor seguro de bolsillo.",
-    "[09:18:22] AUDITORíA: Escaneo completado. Sin anomalías en registros.",
+    "[09:18:22] AUDITORÍA: Escaneo completado. Sin anomalías en registros.",
     "[10:05:01] NOTIFICACIÓN: Límite de deudas establecido en $0 para tarjetas.",
     "[10:12:44] RASTREO: Usuario 'Tobirama_Admin' modificó la cuota Tamarindo.",
     "[11:00:00] LATIDO: Latido de base de datos verificado con éxito (3ms latencia)."
@@ -1180,7 +1180,7 @@ export default function TobiramaFinancialOS() {
       const timeStr = new Date().toLocaleTimeString();
       setTerminalLogs((prev) => [
         ...prev,
-        `[${timeStr}] CATEGORíA: La categoría '${itemToDelete.category}' fue eliminada del presupuesto.`
+        `[${timeStr}] CATEGORÍA: La categoría '${itemToDelete.category}' fue eliminada del presupuesto.`
       ]);
     } catch (err) {
       console.error("Failed to delete budget item from DB:", err);
@@ -1346,7 +1346,7 @@ export default function TobiramaFinancialOS() {
   };
 
   const handleResetDb = async () => {
-    if (!confirm("⚠️ï¸ ADVERTENCIA MíXIMA: ¿Estás seguro de restablecer por completo la base de datos? Esto eliminará permanentemente todas tus transacciones y pondrá todos los presupuestos en $0. Esta acción es irreversible.")) {
+    if (!confirm("⚠️ ADVERTENCIA MÁXIMA: ¿Estás seguro de restablecer por completo la base de datos? Esto eliminará permanentemente todas tus transacciones y pondrá todos los presupuestos en $0. Esta acción es irreversible.")) {
       return;
     }
 
@@ -1610,7 +1610,7 @@ export default function TobiramaFinancialOS() {
     }
   };
 
-  // --- ESCíNER DE FACTURAS CON GEMINI AI ---
+  // --- ESCÁNER DE FACTURAS CON GEMINI AI ---
   const invoiceInputRef = React.useRef<HTMLInputElement>(null);
 
   // --- UTILS PARA ESCÁNER: COMPRESIÓN Y LUMINOSIDAD ---
@@ -1923,7 +1923,7 @@ export default function TobiramaFinancialOS() {
               </div>
               <h2 className="text-xl font-bold tracking-wider uppercase text-white">Tobirama OS</h2>
               <p className="text-xs text-slate-500 font-mono tracking-wider mt-1">
-                {isRegister ? "CREAR CUENTA â€” ACCESO FINANCIERO PERSONAL" : "SISTEMA DE CONTROL DE ACTIVOS"}
+                {isRegister ? "CREAR CUENTA — ACCESO FINANCIERO PERSONAL" : "SISTEMA DE CONTROL DE ACTIVOS"}
               </p>
             </div>
 
@@ -1978,7 +1978,7 @@ export default function TobiramaFinancialOS() {
 
                 {loginError && (
                   <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-xs text-red-400 font-mono px-1">
-                    ⚠️ {loginError}
+                  ⚠️ {loginError}
                   </motion.p>
                 )}
 
@@ -2047,7 +2047,7 @@ export default function TobiramaFinancialOS() {
 
                 {loginError && (
                   <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-xs text-red-400 font-mono px-1">
-                    ⚠️ {loginError}
+                  ⚠️ {loginError}
                   </motion.p>
                 )}
 
@@ -2257,7 +2257,7 @@ export default function TobiramaFinancialOS() {
               }}
               className="p-1.5 rounded-lg bg-[#090a0c] border border-white/[0.04] text-slate-400 hover:text-white text-[12px] font-bold cursor-pointer transition-colors"
             >
-              â—€
+              ◀
             </button>
             <input
               type="month"
@@ -2275,7 +2275,7 @@ export default function TobiramaFinancialOS() {
               }}
               className="p-1.5 rounded-lg bg-[#090a0c] border border-white/[0.04] text-slate-400 hover:text-white text-[12px] font-bold cursor-pointer transition-colors"
             >
-              â–¶
+              ▶
             </button>
           </div>
         </div>
@@ -2525,10 +2525,10 @@ export default function TobiramaFinancialOS() {
                 <div className="glass-panel rounded-2xl p-6 bg-[#0a0b0d]/50 border-white/[0.04] hover:border-white/[0.08] transition-all">
                   <div className="flex justify-between items-center mb-6">
                     <div>
-                      <span className="text-[12px] text-slate-500 uppercase tracking-widest font-mono block font-semibold font-mono">CENTRO DE ANíLISIS Y FLUJO DE CAJA</span>
+                      <span className="text-[12px] text-slate-500 uppercase tracking-widest font-mono block font-semibold font-mono">CENTRO DE ANÁLISIS Y FLUJO DE CAJA</span>
                       <h4 className="text-sm font-bold text-white mt-1 uppercase tracking-wider">DIAGNÓSTICO DE MOVIMIENTOS Y REPORTES</h4>
                     </div>
-                    <span className="text-[12px] text-emerald-400 font-mono animate-pulse">â— Sincronizado en tiempo real</span>
+                    <span className="text-[12px] text-emerald-400 font-mono animate-pulse">● Sincronizado en tiempo real</span>
                   </div>
 
                   <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -2650,7 +2650,7 @@ export default function TobiramaFinancialOS() {
                                 }`}
                               >
                                 <div className="flex items-center gap-1.5 font-mono text-[12px] font-bold uppercase">
-                                  <span>{tip.gravedad === "WARNING" ? "⚠️ï¸" : tip.gravedad === "SUCCESS" ? "✓" : "ℹ️"}</span>
+                          <span>{tip.gravedad === "WARNING" ? "⚠️" : tip.gravedad === "SUCCESS" ? "✓" : "ℹ️"}</span>
                                   <span>{tip.titulo}</span>
                                 </div>
                                 <p className="text-[13px] font-mono leading-relaxed mt-1 text-slate-400">{tip.consejo}</p>
@@ -3019,7 +3019,7 @@ export default function TobiramaFinancialOS() {
                         />
                       </div>
 
-                      {/* INPUT MODES ROUTING â€” min-h evita el brinco al cambiar de modo */}
+                      {/* INPUT MODES ROUTING — min-h evita el brinco al cambiar de modo */}
                       <div className="min-h-[200px]">
                       {inputMode === "keypad" && (
                         <div className="space-y-3 pt-1 border-t border-white/[0.03]">
@@ -3080,7 +3080,7 @@ export default function TobiramaFinancialOS() {
                                     isBack ? "bg-red-500/5 hover:bg-red-500/10 border-red-500/10 text-red-400" : "bg-[#090a0c]/40 hover:bg-[#090a0c] border-white/[0.02]"
                                   }`}
                                 >
-                                  {isBack ? "â†" : key}
+                                  {isBack ? "←" : key}
                                 </button>
                               );
                             })}
@@ -3130,7 +3130,7 @@ export default function TobiramaFinancialOS() {
                       {inputMode === "invoice" && (
                         <div className="border-t border-white/[0.03] space-y-3 pt-3">
 
-                          {/* Zona de carga â€” visible cuando no hay preview */}
+                          {/* Zona de carga — visible cuando no hay preview */}
                           {!invoicePreviewUrl && !isScanning && (
                             <label className="border border-dashed border-white/[0.08] hover:border-blue-500/40 rounded-2xl p-6 flex flex-col items-center justify-center gap-2.5 transition-all bg-[#090a0c]/20 hover:bg-[#090a0c]/45 cursor-pointer">
                               <Upload className="h-6 w-6 text-slate-400" />
@@ -3192,7 +3192,7 @@ export default function TobiramaFinancialOS() {
                                     }}
                                     className="bg-black/70 hover:bg-black/90 border border-white/10 text-slate-400 hover:text-white rounded-lg px-2 py-1 text-[12px] font-mono transition-all cursor-pointer"
                                   >
-                                    âœ• Nueva foto
+                                    ✖ Nueva foto
                                   </button>
                                 </div>
                               </div>
@@ -3201,7 +3201,7 @@ export default function TobiramaFinancialOS() {
                               <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/[0.03] p-2.5 space-y-1.5">
                                 <div className="flex items-center gap-1.5 text-emerald-400 text-[12px] font-mono font-bold">
                                   <Check className="h-3 w-3" />
-                                  <span>DATOS EXTRAíDOS AUTOMíTICAMENTE</span>
+                                  <span>DATOS EXTRAÍDOS AUTOMÁTICAMENTE</span>
                                 </div>
                                 <div className="grid grid-cols-2 gap-1 text-[12px] font-mono">
                                   <div className="bg-black/40 rounded-lg p-1.5">
@@ -3217,7 +3217,7 @@ export default function TobiramaFinancialOS() {
                                     <span className="text-slate-200 font-bold block">{scanResult.fecha}</span>
                                   </div>
                                   <div className="bg-black/40 rounded-lg p-1.5">
-                                    <span className="text-slate-600 block text-[13px]">CATEGORíA</span>
+                              <span className="text-slate-600 block text-[13px]">CATEGORÍA</span>
                                     <span className="text-slate-200 font-bold truncate block">{scanResult.categoria}</span>
                                   </div>
                                 </div>
@@ -3487,7 +3487,7 @@ export default function TobiramaFinancialOS() {
               </motion.div>
             )}
 
-            {/* --- VISTA D: AUDITORíA (BUDGET GRID) --- */}
+            {/* --- VISTA D: AUDITORÍA (BUDGET GRID) --- */}
             {activeView === "audit" && (
               <motion.div
                 key="audit"
@@ -3536,7 +3536,7 @@ export default function TobiramaFinancialOS() {
                       <thead>
                         <tr className="border-b border-white/[0.04] bg-slate-900/10 text-xs font-semibold text-slate-400 uppercase font-mono tracking-wider">
                           <th className="px-6 py-4.5">Categoría</th>
-                          <th className="px-6 py-4.5">ítem / Compromiso</th>
+                          <th className="px-6 py-4.5">Ítem / Compromiso</th>
                           <th className="px-6 py-4.5 text-right">Presupuesto Asignado</th>
                           <th className="px-6 py-4.5 text-right">Ya Pagué (Real)</th>
                           <th className="px-6 py-4.5 text-right">Falta por Pagar</th>
@@ -3653,7 +3653,7 @@ export default function TobiramaFinancialOS() {
                         onClick={handleResetDb}
                         className="px-5 py-3 rounded-xl bg-red-650/10 hover:bg-red-650/20 border border-red-500/25 hover:border-red-500/40 text-red-400 hover:text-red-300 font-bold text-xs uppercase tracking-wider transition-all cursor-pointer flex-shrink-0"
                       >
-                        Restablecer Sistema (Borrar Todo) ⚠️ï¸
+            Restablecer Sistema (Borrar Todo) ⚠️
                       </button>
                     </div>
                   </div>
