@@ -323,6 +323,10 @@ export default function TobiramaFinancialOS() {
   // --- UI STATE ---
   const [activeView, setActiveView] = useState<"dashboard" | "tracker" | "audit">("dashboard");
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
   const [editingItem, setEditingItem] = useState<BudgetItem | null>(null);
   const [editPaidValue, setEditPaidValue] = useState("");
   const [editAssignedValue, setEditAssignedValue] = useState("");
@@ -356,6 +360,7 @@ export default function TobiramaFinancialOS() {
   const [scanSuccess, setScanSuccess] = useState(false);
   const [scanProgress, setScanProgress] = useState(0);
   const [scanResult, setScanResult] = useState<{comercio: string; total: number; fecha: string; categoria: string; descripcion: string} | null>(null);
+  const [invoicePreviewUrl, setInvoicePreviewUrl] = useState<string | null>(null);
   const [aiTips, setAiTips] = useState<{titulo: string; consejo: string; gravedad: "INFO" | "WARNING" | "SUCCESS"}[]>([]);
   const [isLoadingTips, setIsLoadingTips] = useState(false);
 
@@ -364,7 +369,7 @@ export default function TobiramaFinancialOS() {
   const [terminalLogs, setTerminalLogs] = useState<string[]>([
     "[08:42:11] SYSTEM_BOOT: Módulos financieros de Tobirama iniciados.",
     "[09:15:42] SYNC: Libro mayor sincronizado con servidor seguro de bolsillo.",
-    "[09:18:22] AUDITORÍA: Escaneo completado. Sin anomalías en registros.",
+    "[09:18:22] AUDITORíA: Escaneo completado. Sin anomalías en registros.",
     "[10:05:01] NOTIFICACIÓN: Límite de deudas establecido en $0 para tarjetas.",
     "[10:12:44] RASTREO: Usuario 'Tobirama_Admin' modificó la cuota Tamarindo.",
     "[11:00:00] LATIDO: Latido de base de datos verificado con éxito (3ms latencia)."
@@ -482,6 +487,60 @@ export default function TobiramaFinancialOS() {
       return [...expenseCats, "Otra..."];
     }
   }, [CATEGORIES, quickType]);
+
+  // --- UI/UX Helpers for Visual Capture Form ---
+  const visualFormConfig = useMemo(() => {
+    const isIncome = quickType === "Ingreso";
+    const isReserve = quickType === "Movimiento a Reserva";
+
+    return {
+      cardBorder: isIncome 
+        ? "border-emerald-500/10 shadow-[0_0_50px_rgba(16,185,129,0.06)] bg-gradient-to-b from-[#020603] to-[#040507]" 
+        : isReserve
+          ? "border-blue-500/10 shadow-[0_0_50px_rgba(59,130,246,0.06)] bg-gradient-to-b from-[#020306] to-[#040507]"
+          : "border-red-500/10 shadow-[0_0_50px_rgba(239,68,68,0.06)] bg-gradient-to-b from-[#060202] to-[#040507]",
+      typeColor: isIncome
+        ? "text-emerald-400"
+        : isReserve
+          ? "text-blue-400"
+          : "text-red-400 font-semibold",
+      amountLabel: isIncome
+        ? "Monto del Ingreso"
+        : isReserve
+          ? "Monto de la Reserva / Ahorro"
+          : "Monto del Gasto",
+      amountRing: isIncome
+        ? "focus-within:border-emerald-500/30"
+        : isReserve
+          ? "focus-within:border-blue-500/30"
+          : "focus-within:border-red-500/30",
+      descLabel: isIncome
+        ? "Detalle del Ingreso"
+        : isReserve
+          ? "Detalle de la Reserva / Ahorro"
+          : "Detalle del Gasto",
+      descPlaceholder: isIncome
+        ? "Concepto o Procedencia (Ej. Pago de Nómina)"
+        : isReserve
+          ? "Fondo de destino (Ej. Colchón de Emergencias)"
+          : "Comercio o Concepto (Ej. Gasolina Copec)",
+      payMethodLabel: isIncome
+        ? "Recibido en (Cuenta/Caja)"
+        : isReserve
+          ? "Origen del Dinero"
+          : "Método de Pago",
+      confirmBtnBg: isIncome
+        ? "bg-gradient-to-r from-emerald-500 to-green-400 hover:from-emerald-400 hover:to-green-300 text-black shadow-emerald-500/5"
+        : isReserve
+          ? "bg-gradient-to-r from-blue-500 to-indigo-400 hover:from-blue-400 hover:to-indigo-300 text-white shadow-blue-500/5"
+          : "bg-gradient-to-r from-red-500 to-rose-400 hover:from-red-400 hover:to-rose-350 text-white shadow-red-500/5",
+      confirmBtnText: isIncome
+        ? "Confirmar Ingreso 💰"
+        : isReserve
+          ? "Confirmar Reserva 🛡️"
+          : "Confirmar Gasto 💸"
+    };
+  }, [quickType]);
 
   // --- DYNAMIC MONTHLY BUDGETITEMS COMPUTATION ---
   const monthlyBudgetItems = useMemo(() => {
@@ -962,15 +1021,9 @@ export default function TobiramaFinancialOS() {
   // Quick register transaction form submission (Vista C - Screen 2 style)
   const handleQuickRegister = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (isActionPending) {
-      showToast("Ya hay una acción en progreso. Por favor, espera.", "warning");
-      return;
-    }
 
     const amountVal = parseFormattedCOP(quickAmount) || 0;
     if (amountVal <= 0) return;
-
-    setIsActionPending(true);
 
     const finalCategory = quickCategory === "Otra..." ? (customCategory.trim() || "Otros") : quickCategory;
     const desc = quickDescription.trim() || `Transacción flash: ${finalCategory}`;
@@ -1046,21 +1099,13 @@ export default function TobiramaFinancialOS() {
       body: JSON.stringify(newTx),
     }).catch(() => {
       showToast("Error de red al guardar en la base de datos.", "warning");
-    }).finally(() => {
-      setIsActionPending(false);
     });
   };
 
   // REACTIVE TRANSACTION DELETION (Clear data cleanly)
   const handleDeleteTransaction = async (id: string) => {
-    if (isActionPending) {
-      showToast("Ya hay una acción en progreso. Por favor, espera.", "warning");
-      return;
-    }
     const txToDelete = transactions.find((t) => t.id === id);
     if (!txToDelete) return;
-
-    setIsActionPending(true);
 
     // Remove from central list
     setTransactions((prev) => prev.filter((t) => t.id !== id));
@@ -1094,8 +1139,6 @@ export default function TobiramaFinancialOS() {
     } catch (err) {
       console.error("Failed to delete transaction from DB:", err);
       showToast("Error al eliminar la transacción del servidor.", "error");
-    } finally {
-      setIsActionPending(false);
     }
 
     // Append terminal logs
@@ -1137,7 +1180,7 @@ export default function TobiramaFinancialOS() {
       const timeStr = new Date().toLocaleTimeString();
       setTerminalLogs((prev) => [
         ...prev,
-        `[${timeStr}] CATEGORÍA: La categoría '${itemToDelete.category}' fue eliminada del presupuesto.`
+        `[${timeStr}] CATEGORíA: La categoría '${itemToDelete.category}' fue eliminada del presupuesto.`
       ]);
     } catch (err) {
       console.error("Failed to delete budget item from DB:", err);
@@ -1178,6 +1221,7 @@ export default function TobiramaFinancialOS() {
             ...prev,
             `[${timeStr}] CRÉDITO: Abono a '${credit.name}' marcado como PENDIENTE. Eliminando transacción.`
           ]);
+          showToast(`Abono a '${credit.name}' marcado como PENDIENTE.`, "info");
 
           try {
             await fetch(`/api/transactions?id=${txToDelete.id}`, { 
@@ -1219,6 +1263,7 @@ export default function TobiramaFinancialOS() {
           ...prev,
           `[${timeStr}] CRÉDITO: Abono a '${credit.name}' de ${formatCOP(credit.monthlyPayment)} registrado como PAGADO.`
         ]);
+        showToast(`Abono a '${credit.name}' registrado como PAGADO.`, "success");
 
         try {
           await fetch("/api/transactions", {
@@ -1265,6 +1310,11 @@ export default function TobiramaFinancialOS() {
         ...prev,
         `[${timeStr}] PAGO RÁPIDO: Registro de ajuste por ${formatCOP(Math.abs(diff))} en '${item.category}'.`
       ]);
+      if (newPaid > 0) {
+        showToast(`Marcado como PAGADO: ${item.item} (${formatCOP(newPaid)})`, "success");
+      } else {
+        showToast(`Marcado como PENDIENTE: ${item.item}`, "info");
+      }
     }
 
     try {
@@ -1296,7 +1346,7 @@ export default function TobiramaFinancialOS() {
   };
 
   const handleResetDb = async () => {
-    if (!confirm("⚠️ ADVERTENCIA MÁXIMA: ¿Estás seguro de restablecer por completo la base de datos? Esto eliminará permanentemente todas tus transacciones y pondrá todos los presupuestos en $0. Esta acción es irreversible.")) {
+    if (!confirm("⚠️ï¸ ADVERTENCIA MíXIMA: ¿Estás seguro de restablecer por completo la base de datos? Esto eliminará permanentemente todas tus transacciones y pondrá todos los presupuestos en $0. Esta acción es irreversible.")) {
       return;
     }
 
@@ -1560,121 +1610,125 @@ export default function TobiramaFinancialOS() {
     }
   };
 
-  // --- AUXILIAR: COMPRESIÓN + VALIDACIÓN DE CALIDAD DE IMAGEN (CLIENTE) ---
-  const compressImage = (file: File): Promise<{ file: File; lowLight: boolean }> => {
+  // --- ESCíNER DE FACTURAS CON GEMINI AI ---
+  const invoiceInputRef = React.useRef<HTMLInputElement>(null);
+
+  // --- UTILS PARA ESCÁNER: COMPRESIÓN Y LUMINOSIDAD ---
+  const compressAndAnalyzeImage = (file: File): Promise<{ file: File; isDark: boolean }> => {
     return new Promise((resolve) => {
-      if (!file.type.startsWith("image/")) {
-        resolve({ file, lowLight: false });
-        return;
-      }
+      const img = new Image();
+      img.src = URL.createObjectURL(file);
+      img.onload = () => {
+        URL.revokeObjectURL(img.src);
+        const canvas = document.createElement("canvas");
+        const ctx = canvas.getContext("2d");
+        if (!ctx) {
+          resolve({ file, isDark: false });
+          return;
+        }
 
-      const reader = new FileReader();
-      reader.readAsDataURL(file);
-      reader.onload = (event) => {
-        const img = new Image();
-        img.src = event.target?.result as string;
-        img.onload = () => {
-          const canvas = document.createElement("canvas");
-          let width = img.width;
-          let height = img.height;
-          const maxDim = 1200;
+        // Redimensionar si supera 1024px para mantener el OCR rápido e instantáneo
+        const MAX_WIDTH = 1024;
+        const MAX_HEIGHT = 1024;
+        let width = img.width;
+        let height = img.height;
 
-          if (width > maxDim || height > maxDim) {
-            if (width > height) {
-              height = Math.round((height * maxDim) / width);
-              width = maxDim;
+        if (width > height) {
+          if (width > MAX_WIDTH) {
+            height = Math.round((height * MAX_WIDTH) / width);
+            width = MAX_WIDTH;
+          }
+        } else {
+          if (height > MAX_HEIGHT) {
+            width = Math.round((width * MAX_HEIGHT) / height);
+            height = MAX_HEIGHT;
+          }
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        ctx.drawImage(img, 0, 0, width, height);
+
+        // Analizar brillo promedio
+        try {
+          const imgData = ctx.getImageData(0, 0, width, height);
+          const data = imgData.data;
+          let totalLuminance = 0;
+          const pixelCount = data.length / 4;
+          
+          for (let i = 0; i < data.length; i += 4) {
+            const r = data[i];
+            const g = data[i + 1];
+            const b = data[i + 2];
+            // Fórmula estándar de luminancia
+            const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+            totalLuminance += lum;
+          }
+          const avgLuminance = totalLuminance / pixelCount;
+          // Si el brillo promedio es < 50, se considera muy oscura
+          const isDark = avgLuminance < 50;
+
+          // Comprimir como JPEG con 82% de calidad (OCR perfecto y archivo liviano ~150-200KB)
+          canvas.toBlob((blob) => {
+            if (blob) {
+              const compressedFile = new File([blob], file.name.replace(/\.[^/.]+$/, "") + ".jpg", {
+                type: "image/jpeg",
+                lastModified: Date.now(),
+              });
+              resolve({ file: compressedFile, isDark });
             } else {
-              width = Math.round((width * maxDim) / height);
-              height = maxDim;
+              resolve({ file, isDark });
             }
-          }
+          }, "image/jpeg", 0.82);
 
-          canvas.width = width;
-          canvas.height = height;
-          const ctx = canvas.getContext("2d");
-          if (!ctx) {
-            resolve({ file, lowLight: false });
-            return;
-          }
-
-          ctx.drawImage(img, 0, 0, width, height);
-
-          // Detección de luminosidad: muestrear píxeles y calcular brillo promedio
-          let lowLight = false;
-          try {
-            const sampleW = Math.min(width, 200);
-            const sampleH = Math.min(height, 200);
-            const imageData = ctx.getImageData(
-              Math.floor((width - sampleW) / 2),
-              Math.floor((height - sampleH) / 2),
-              sampleW, sampleH
-            );
-            let total = 0;
-            const data = imageData.data;
-            const pixels = data.length / 4;
-            for (let i = 0; i < data.length; i += 4) {
-              // Luminosidad perceptual (fórmula estándar)
-              total += 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
-            }
-            const avgBrightness = total / pixels;
-            lowLight = avgBrightness < 55; // < 55/255 = muy oscuro
-          } catch (_) { /* canvas tainted, ignorar */ }
-
-          canvas.toBlob(
-            (blob) => {
-              if (blob) {
-                const compressedFile = new File([blob], file.name.replace(/\.[^/.]+$/, "") + ".jpg", {
-                  type: "image/jpeg",
-                  lastModified: Date.now(),
-                });
-                resolve({ file: compressedFile, lowLight });
-              } else {
-                resolve({ file, lowLight });
-              }
-            },
-            "image/jpeg",
-            0.88
-          );
-        };
-        img.onerror = () => resolve({ file, lowLight: false });
+        } catch (err) {
+          console.error("Error al procesar canvas:", err);
+          resolve({ file, isDark: false });
+        }
       };
-      reader.onerror = () => resolve({ file, lowLight: false });
+      img.onerror = () => {
+        resolve({ file, isDark: false });
+      };
     });
   };
 
-  // --- INVOICE UPLOAD SCANNER (Google Gemini AI Vision OCR) ---
-  const invoiceInputRef = React.useRef<HTMLInputElement>(null);
-
   const handleInvoiceUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!e.target.files || e.target.files.length === 0) return;
-    const file = e.target.files[0];
+    const originalFile = e.target.files?.[0];
+    if (!originalFile) return;
 
     setIsScanning(true);
     setScanSuccess(false);
     setScanResult(null);
-    setScanProgress(0);
+    setScanProgress(5);
+
+    // Revocar preview anterior
+    if (invoicePreviewUrl) URL.revokeObjectURL(invoicePreviewUrl);
+
+    // Mostrar preview local de inmediato (sin esperar la API)
+    const localUrl = URL.createObjectURL(originalFile);
+    setInvoicePreviewUrl(localUrl);
 
     const progressInterval = setInterval(() => {
-      setScanProgress(prev => prev < 85 ? prev + Math.random() * 10 : prev);
-    }, 400);
+      setScanProgress(prev => prev < 85 ? prev + Math.random() * 8 : prev);
+    }, 450);
 
     try {
-      // Comprimir y validar luminosidad antes de enviar
-      console.log(`[OCR] Original: ${(file.size / 1024).toFixed(1)} KB`);
-      const { file: fileToUpload, lowLight } = await compressImage(file);
-      console.log(`[OCR] Comprimido: ${(fileToUpload.size / 1024).toFixed(1)} KB | Poca luz: ${lowLight}`);
+      // 1. Comprimir y analizar la imagen en el cliente
+      const { file, isDark } = await compressAndAnalyzeImage(originalFile);
 
-      // Advertir al usuario si detectamos poca luz (pero seguimos intentando)
-      if (lowLight) {
-        showToast("⚠️ La foto parece oscura. Para mejores resultados usa buena iluminación.", "warning");
+      // Si es muy oscura, advertir al usuario pero seguir intentando
+      if (isDark) {
+        showToast("⚠️ Foto muy oscura: Asegúrate de tener buena luz para que la IA lea bien los datos.", "warning");
       }
 
-      const formData = new FormData();
-      formData.append("file", fileToUpload);
+      setScanProgress(20);
 
+      const formData = new FormData();
+      formData.append("file", file);
+
+      // La ruta /api/ai/invoice no requiere auth — solo procesa la imagen
       const res = await fetch("/api/ai/invoice", {
         method: "POST",
-        headers: getAuthHeader(),
         body: formData
       });
 
@@ -1683,9 +1737,7 @@ export default function TobiramaFinancialOS() {
       // Error especial: imagen de mala calidad (detectado por Gemini)
       if (data.error === "imagen_mala") {
         setScanProgress(0);
-        showToast("📷 " + (data.mensaje || "La foto no es suficientemente clara. Intenta con mejor luz y enfoque."), "warning");
-        // Resetear input para que el usuario pueda intentar de nuevo
-        if (invoiceInputRef.current) invoiceInputRef.current.value = "";
+        showToast("📸 " + (data.mensaje || "La foto no tiene suficiente calidad. Intenta con mejor luz y enfoque."), "warning");
         return;
       }
 
@@ -1694,29 +1746,35 @@ export default function TobiramaFinancialOS() {
       setScanProgress(100);
       setScanResult(data);
 
-      // Rellenar el formulario con los datos extraídos
-      setQuickAmount(formatNumberCOP(data.total || 0));
-      setQuickDescription(`${data.comercio}: ${data.descripcion}`);
+      // Rellenar automáticamente el formulario con los datos extraídos
+      if (data.total && data.total > 0) setQuickAmount(formatNumberCOP(data.total));
+      if (data.comercio && data.descripcion) setQuickDescription(`${data.comercio}: ${data.descripcion}`);
+      else if (data.comercio) setQuickDescription(data.comercio);
       if (data.categoria) setQuickCategory(data.categoria as Category);
       setQuickType("Gasto Extra");
       if (data.fecha) setQuickDate(data.fecha);
       setScanSuccess(true);
 
-      const qualityNote = data.calidad_imagen === "REGULAR" ? " (calidad regular, verifica los datos)" : "";
-      showToast(`✅ Factura de ${data.comercio} leída correctamente${qualityNote}`, "success");
+      const qualityNote = data.calidad_imagen === "REGULAR" ? " · verifica los datos" : "";
+      showToast(`✅ Factura escaneada: ${data.comercio}${qualityNote}`, "success");
 
     } catch (err: any) {
       setScanProgress(0);
       const msg = err?.message || "Error desconocido";
       showToast(`Error al escanear: ${msg.slice(0, 90)}`, "warning");
-      console.error("[OCR] Error:", err);
+      console.error("[OCR]", err);
     } finally {
       clearInterval(progressInterval);
       setIsScanning(false);
-      // Resetear el input de archivo para permitir subir la misma foto de nuevo
       if (invoiceInputRef.current) invoiceInputRef.current.value = "";
     }
   };
+
+  // Limpiar URL al desmontar
+  React.useEffect(() => {
+    return () => { if (invoicePreviewUrl) URL.revokeObjectURL(invoicePreviewUrl); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // --- GOOGLE GEMINI AI COACHING TIPS ---
   const loadAiTips = async () => {
@@ -1818,6 +1876,26 @@ export default function TobiramaFinancialOS() {
     });
   };
 
+  // --- PREVENT HYDRATION MISMATCH ---
+  if (!mounted) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-black font-sans text-slate-100 relative overflow-hidden">
+        {/* background glow */}
+        <div className="absolute inset-0 pointer-events-none">
+          <div className="absolute top-1/4 left-1/2 -translate-x-1/2 w-[600px] h-[600px] rounded-full bg-blue-600/5 blur-3xl" />
+        </div>
+        <div className="flex flex-col items-center gap-4 relative z-10">
+          <div className="h-14 w-14 rounded-2xl bg-white/[0.02] border border-white/[0.08] flex items-center justify-center font-bold font-mono text-2xl text-white animate-pulse">
+            T
+          </div>
+          <div className="text-[11px] font-mono tracking-widest text-slate-500 uppercase animate-pulse">
+            Tobirama OS Booting...
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   // --- RENDER LOGIN / REGISTER GATEWAY ---
   if (!isAuthenticated) {
     const isRegister = authMode === "register";
@@ -1845,7 +1923,7 @@ export default function TobiramaFinancialOS() {
               </div>
               <h2 className="text-xl font-bold tracking-wider uppercase text-white">Tobirama OS</h2>
               <p className="text-xs text-slate-500 font-mono tracking-wider mt-1">
-                {isRegister ? "CREAR CUENTA — ACCESO FINANCIERO PERSONAL" : "SISTEMA DE CONTROL DE ACTIVOS"}
+                {isRegister ? "CREAR CUENTA â€” ACCESO FINANCIERO PERSONAL" : "SISTEMA DE CONTROL DE ACTIVOS"}
               </p>
             </div>
 
@@ -1900,7 +1978,7 @@ export default function TobiramaFinancialOS() {
 
                 {loginError && (
                   <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-xs text-red-400 font-mono px-1">
-                    ⚠ {loginError}
+                    ⚠️ {loginError}
                   </motion.p>
                 )}
 
@@ -1969,7 +2047,7 @@ export default function TobiramaFinancialOS() {
 
                 {loginError && (
                   <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-xs text-red-400 font-mono px-1">
-                    ⚠ {loginError}
+                    ⚠️ {loginError}
                   </motion.p>
                 )}
 
@@ -1980,8 +2058,7 @@ export default function TobiramaFinancialOS() {
                 >
                   {isAuthLoading ? "Creando cuenta..." : "Crear Cuenta"}
                 </button>
-
-                <p className="text-center text-[10px] text-slate-600 font-mono pt-1">
+                <p className="text-center text-[12px] text-slate-600 font-mono pt-1">
                   Al registrarte, tus datos financieros son completamente privados e independientes.
                 </p>
               </form>
@@ -1989,67 +2066,13 @@ export default function TobiramaFinancialOS() {
           </div>
 
           {/* Footer */}
-          <p className="text-center text-[10px] text-slate-700 font-mono mt-4">
+          <p className="text-center text-[12px] text-slate-700 font-mono mt-4">
             Tobirama OS · Datos encriptados · Acceso personal
           </p>
         </motion.div>
       </div>
     );
   }
-
-  // --- UI/UX Helpers for Visual Capture Form ---
-  const visualFormConfig = useMemo(() => {
-    const isIncome = quickType === "Ingreso";
-    const isReserve = quickType === "Movimiento a Reserva";
-
-    return {
-      cardBorder: isIncome 
-        ? "border-emerald-500/10 shadow-[0_0_50px_rgba(16,185,129,0.06)] bg-gradient-to-b from-[#020603] to-[#040507]" 
-        : isReserve
-          ? "border-blue-500/10 shadow-[0_0_50px_rgba(59,130,246,0.06)] bg-gradient-to-b from-[#020306] to-[#040507]"
-          : "border-red-500/10 shadow-[0_0_50px_rgba(239,68,68,0.06)] bg-gradient-to-b from-[#060202] to-[#040507]",
-      typeColor: isIncome
-        ? "text-emerald-400"
-        : isReserve
-          ? "text-blue-400"
-          : "text-red-400 font-semibold",
-      amountLabel: isIncome
-        ? "Monto del Ingreso"
-        : isReserve
-          ? "Monto de la Reserva / Ahorro"
-          : "Monto del Gasto",
-      amountRing: isIncome
-        ? "focus-within:border-emerald-500/30"
-        : isReserve
-          ? "focus-within:border-blue-500/30"
-          : "focus-within:border-red-500/30",
-      descLabel: isIncome
-        ? "Detalle del Ingreso"
-        : isReserve
-          ? "Detalle de la Reserva / Ahorro"
-          : "Detalle del Gasto",
-      descPlaceholder: isIncome
-        ? "Concepto o Procedencia (Ej. Pago de Nómina)"
-        : isReserve
-          ? "Fondo de destino (Ej. Colchón de Emergencias)"
-          : "Comercio o Concepto (Ej. Gasolina Copec)",
-      payMethodLabel: isIncome
-        ? "Recibido en (Cuenta/Caja)"
-        : isReserve
-          ? "Origen del Dinero"
-          : "Método de Pago",
-      confirmBtnBg: isIncome
-        ? "bg-gradient-to-r from-emerald-500 to-green-400 hover:from-emerald-400 hover:to-green-300 text-black shadow-emerald-500/5"
-        : isReserve
-          ? "bg-gradient-to-r from-blue-500 to-indigo-400 hover:from-blue-400 hover:to-indigo-300 text-white shadow-blue-500/5"
-          : "bg-gradient-to-r from-red-500 to-rose-400 hover:from-red-400 hover:to-rose-350 text-white shadow-red-500/5",
-      confirmBtnText: isIncome
-        ? "Confirmar Ingreso 💰"
-        : isReserve
-          ? "Confirmar Reserva 🛡️"
-          : "Confirmar Gasto 💸"
-    };
-  }, [quickType]);
 
   // --- RENDER MAIN OS APP ---
   return (
@@ -2202,7 +2225,7 @@ export default function TobiramaFinancialOS() {
 
             {/* User avatar + name + logout */}
             <div className="flex items-center gap-2 ml-1">
-              <div className="h-7 w-7 rounded-full bg-gradient-to-tr from-blue-700 to-emerald-600 border border-white/[0.08] flex items-center justify-center font-bold text-[10px] text-white flex-shrink-0">
+              <div className="h-7 w-7 rounded-full bg-gradient-to-tr from-blue-700 to-emerald-600 border border-white/[0.08] flex items-center justify-center font-bold text-[12px] text-white flex-shrink-0">
                 {(currentUser.fullName || "U").split(" ").map((n: string) => n[0]).join("").toUpperCase().slice(0, 2)}
               </div>
               <span className="hidden lg:block text-xs font-mono text-slate-400 max-w-[100px] truncate">
@@ -2223,7 +2246,7 @@ export default function TobiramaFinancialOS() {
         <div className="bg-[#050505] border-b border-white/[0.03] px-6 py-3 md:px-8 flex items-center justify-between gap-4">
           <div className="flex items-center gap-2">
             <span className="h-2 w-2 rounded-full bg-blue-500 animate-pulse" />
-            <span className="text-[10px] font-bold font-mono tracking-widest text-slate-500 uppercase">Periodo de Análisis</span>
+            <span className="text-[12px] font-bold font-mono tracking-widest text-slate-500 uppercase">Periodo de Análisis</span>
           </div>
           <div className="flex items-center gap-2">
             <button
@@ -2232,9 +2255,9 @@ export default function TobiramaFinancialOS() {
                 const prevDate = new Date(year, month - 2, 1);
                 setSelectedMonth(`${prevDate.getFullYear()}-${String(prevDate.getMonth() + 1).padStart(2, "0")}`);
               }}
-              className="p-1.5 rounded-lg bg-[#090a0c] border border-white/[0.04] text-slate-400 hover:text-white text-[10px] font-bold cursor-pointer transition-colors"
+              className="p-1.5 rounded-lg bg-[#090a0c] border border-white/[0.04] text-slate-400 hover:text-white text-[12px] font-bold cursor-pointer transition-colors"
             >
-              ◀
+              â—€
             </button>
             <input
               type="month"
@@ -2250,15 +2273,15 @@ export default function TobiramaFinancialOS() {
                 const nextDate = new Date(year, month, 1);
                 setSelectedMonth(`${nextDate.getFullYear()}-${String(nextDate.getMonth() + 1).padStart(2, "0")}`);
               }}
-              className="p-1.5 rounded-lg bg-[#090a0c] border border-white/[0.04] text-slate-400 hover:text-white text-[10px] font-bold cursor-pointer transition-colors"
+              className="p-1.5 rounded-lg bg-[#090a0c] border border-white/[0.04] text-slate-400 hover:text-white text-[12px] font-bold cursor-pointer transition-colors"
             >
-              ▶
+              â–¶
             </button>
           </div>
         </div>
 
         {/* --- VIEW ROUTING --- */}
-        <main className="flex-1 p-6 pb-24 md:p-8 md:pb-8 max-w-7xl w-full mx-auto space-y-8 bg-black">
+        <main className="flex-1 p-6 pb-24 md:p-8 md:pb-8 max-w-7xl w-full mx-auto space-y-8 bg-black min-h-[60vh]">
           <AnimatePresence mode="wait">
             
             {/* --- VISTA A: TORRE DE CONTROL (DASHBOARD) --- */}
@@ -2277,7 +2300,7 @@ export default function TobiramaFinancialOS() {
                   <div className="relative glass-panel rounded-2xl p-6 flex flex-col justify-between min-h-[180px] group transition-all hover:border-emerald-500/20 bg-[#0a0b0d]/50 border-white/[0.04]">
                     <div className="flex justify-between items-start">
                       <div>
-                        <span className="text-[10px] text-slate-500 uppercase tracking-widest font-mono font-semibold">PATRIMONIO NETO</span>
+                        <span className="text-[12px] text-slate-500 uppercase tracking-widest font-mono font-semibold">PATRIMONIO NETO</span>
                         <div className="text-3xl font-bold font-mono text-white mt-3">
                           {formatCOP(netWorthTotal)}
                         </div>
@@ -2288,12 +2311,12 @@ export default function TobiramaFinancialOS() {
                     </div>
                     <div className="mt-4 pt-3 border-t border-white/[0.03] grid grid-cols-2 gap-4">
                       <div>
-                        <div className="text-[8px] text-slate-500 font-mono uppercase">Ingresos Fijos</div>
-                        <div className="text-[11px] font-bold font-mono text-slate-200">{formatCOP(flowMetrics.totalFixedIncomes)}</div>
+                        <div className="text-[13px] text-slate-500 font-mono uppercase">Ingresos Fijos</div>
+                        <div className="text-[13px] font-bold font-mono text-slate-200">{formatCOP(flowMetrics.totalFixedIncomes)}</div>
                       </div>
                       <div>
-                        <div className="text-[8px] text-slate-500 font-mono uppercase">Ingresos Variables</div>
-                        <div className="text-[11px] font-bold font-mono text-slate-400">{formatCOP(flowMetrics.totalVariableIncomes)}</div>
+                        <div className="text-[13px] text-slate-500 font-mono uppercase">Ingresos Variables</div>
+                        <div className="text-[13px] font-bold font-mono text-slate-400">{formatCOP(flowMetrics.totalVariableIncomes)}</div>
                       </div>
                     </div>
                   </div>
@@ -2302,7 +2325,7 @@ export default function TobiramaFinancialOS() {
                   <div className="relative glass-panel rounded-2xl p-6 flex flex-col justify-between min-h-[180px] group transition-all hover:border-red-500/20 bg-[#0a0b0d]/50 border-white/[0.04]">
                     <div className="flex justify-between items-start">
                       <div>
-                        <span className="text-[10px] text-slate-500 uppercase tracking-widest font-mono font-semibold">GASTO MENSUAL</span>
+                        <span className="text-[12px] text-slate-500 uppercase tracking-widest font-mono font-semibold">GASTO MENSUAL</span>
                         <div className="text-3xl font-bold font-mono text-white mt-3">
                           {formatCOP(monthlyBurn)}
                         </div>
@@ -2313,20 +2336,20 @@ export default function TobiramaFinancialOS() {
                     </div>
                     <div className="mt-4 pt-3 border-t border-white/[0.03] grid grid-cols-2 gap-4">
                       <div>
-                        <div className="text-[8px] text-slate-500 font-mono uppercase">Gastos Fijos</div>
-                        <div className="text-[11px] font-bold font-mono text-slate-200">
+                        <div className="text-[13px] text-slate-500 font-mono uppercase">Gastos Fijos</div>
+                        <div className="text-[13px] font-bold font-mono text-slate-200">
                           {formatCOP(flowMetrics.totalFixedExpenses)}
                         </div>
-                        <div className="text-[8px] text-slate-650 font-mono">
+                        <div className="text-[13px] text-slate-650 font-mono">
                           Prog: {formatCOP(monthlyBudgetItems.filter(i => i.isFixed).reduce((s, i) => s + i.assigned, 0))}
                         </div>
                       </div>
                       <div>
-                        <div className="text-[8px] text-slate-500 font-mono uppercase">Gastos Variables</div>
-                        <div className="text-[11px] font-bold font-mono text-slate-200">
+                        <div className="text-[13px] text-slate-500 font-mono uppercase">Gastos Variables</div>
+                        <div className="text-[13px] font-bold font-mono text-slate-200">
                           {formatCOP(flowMetrics.totalVariableExpenses)}
                         </div>
-                        <div className="text-[8px] text-slate-650 font-mono">
+                        <div className="text-[13px] text-slate-650 font-mono">
                           Prog: {formatCOP(monthlyBudgetItems.filter(i => !i.isFixed).reduce((s, i) => s + i.assigned, 0))}
                         </div>
                       </div>
@@ -2336,14 +2359,14 @@ export default function TobiramaFinancialOS() {
                   {/* Card 3: Radial Deuda Erradicada */}
                   <div className="relative glass-panel rounded-2xl p-6 flex items-center justify-between min-h-[160px] group transition-all hover:border-blue-500/20 bg-[#0a0b0d]/50 border-white/[0.04]">
                     <div className="space-y-4">
-                      <span className="text-[10px] text-slate-500 uppercase tracking-widest font-mono block font-semibold">DEUDA ERRADICADA</span>
+                      <span className="text-[12px] text-slate-500 uppercase tracking-widest font-mono block font-semibold">DEUDA ERRADICADA</span>
                       <div className="grid grid-cols-2 gap-4">
                         <div>
-                          <span className="text-[9px] text-slate-600 font-mono block">PENDIENTE</span>
+                          <span className="text-[12px] text-slate-600 font-mono block">PENDIENTE</span>
                           <span className="text-sm font-bold font-mono text-slate-300">{formatCOP(debtMetrics.totalPending)}</span>
                         </div>
                         <div>
-                          <span className="text-[9px] text-slate-600 font-mono block">PROYECTADO Q4</span>
+                          <span className="text-[12px] text-slate-600 font-mono block">PROYECTADO Q4</span>
                           <span className="text-sm font-bold font-mono text-emerald-400">$0</span>
                         </div>
                       </div>
@@ -2368,7 +2391,7 @@ export default function TobiramaFinancialOS() {
                       </svg>
                       <div className="absolute flex flex-col items-center justify-center text-center">
                         <span className="text-base font-bold font-mono text-white">{Math.round(debtMetrics.percentage)}%</span>
-                        <span className="text-[8px] text-slate-500 uppercase tracking-tight font-semibold">Completado</span>
+                        <span className="text-[13px] text-slate-500 uppercase tracking-tight font-semibold">Completado</span>
                       </div>
                     </div>
                   </div>
@@ -2381,12 +2404,12 @@ export default function TobiramaFinancialOS() {
                   <div className="lg:col-span-8 glass-panel rounded-2xl p-6 bg-[#0a0b0d]/50 border-white/[0.04] hover:border-white/[0.08] transition-all">
                     <div className="flex justify-between items-start mb-6">
                       <div>
-                        <span className="text-[9px] text-slate-500 uppercase tracking-widest font-mono block font-semibold">TRAYECTORIA MENSUAL</span>
+                        <span className="text-[12px] text-slate-500 uppercase tracking-widest font-mono block font-semibold">TRAYECTORIA MENSUAL</span>
                         <h4 className="text-sm font-bold text-white mt-1 uppercase tracking-wider">VELOCIDAD DEL CAPITAL</h4>
                       </div>
                       <div className="text-right font-mono">
                         <span className="text-lg font-bold text-white">{formatCOP(pocketLiquidity)}</span>
-                        <span className="text-[9px] text-emerald-400 block">+12.4% vs prev</span>
+                        <span className="text-[12px] text-emerald-400 block">+12.4% vs prev</span>
                       </div>
                     </div>
 
@@ -2416,7 +2439,7 @@ export default function TobiramaFinancialOS() {
                         </div>
                       )}
                       
-                      <div className="flex justify-between items-center text-[8px] font-mono text-slate-650 mt-2">
+                      <div className="flex justify-between items-center text-[13px] font-mono text-slate-650 mt-2">
                         {trajectoryPoints.length > 0 ? (
                           <>
                             <span>{trajectoryPoints[0].date}</span>
@@ -2437,7 +2460,7 @@ export default function TobiramaFinancialOS() {
                   {/* Column 3: Control de Caja metrics (Col-span 4) */}
                   <div className="lg:col-span-4 glass-panel rounded-2xl p-6 flex flex-col justify-between bg-[#0a0b0d]/50 border-white/[0.04] hover:border-white/[0.08] transition-all">
                     <div>
-                      <span className="text-[10px] text-slate-500 uppercase tracking-widest font-mono font-semibold">CONTROL DE CAJA</span>
+                      <span className="text-[12px] text-slate-500 uppercase tracking-widest font-mono font-semibold">CONTROL DE CAJA</span>
                       <h4 className="text-sm font-bold text-white mt-1 uppercase tracking-wider">EFICIENCIA Y LIQUIDEZ</h4>
                     </div>
 
@@ -2453,7 +2476,7 @@ export default function TobiramaFinancialOS() {
                             transition={{ duration: 1 }}
                           />
                         </div>
-                        <span className="text-[9px] font-mono text-emerald-400 font-bold">{((pocketLiquidity / INITIAL_INCOME) * 100).toFixed(0)}% Liq</span>
+                        <span className="text-[12px] font-mono text-emerald-400 font-bold">{((pocketLiquidity / INITIAL_INCOME) * 100).toFixed(0)}% Liq</span>
                       </div>
 
                       {/* Circular Gauge */}
@@ -2474,24 +2497,24 @@ export default function TobiramaFinancialOS() {
                                 strokeLinecap="round" 
                               />
                             </svg>
-                            <span className="absolute text-[9px] font-bold font-mono text-white">
+                            <span className="absolute text-[12px] font-bold font-mono text-white">
                               {Math.round((monthlyBurn / INITIAL_INCOME) * 100)}%
                             </span>
                           </div>
                           <div>
-                            <span className="text-[9px] text-slate-550 font-mono block leading-none">BURN RATE</span>
+                            <span className="text-[12px] text-slate-550 font-mono block leading-none">BURN RATE</span>
                             <span className="text-xs font-bold font-mono text-slate-200 mt-1 block">{formatCOP(monthlyBurn)}</span>
                           </div>
                         </div>
 
-                        <div className="space-y-1 text-[9px] font-mono text-slate-400 leading-tight">
+                        <div className="space-y-1 text-[12px] font-mono text-slate-400 leading-tight">
                           <div><span className="text-slate-600">DISPONIBLE:</span> {formatCOP(pocketLiquidity)}</div>
                           <div><span className="text-slate-600">RUNWAY:</span> 18 Meses</div>
                         </div>
                       </div>
                     </div>
 
-                    <div className="text-[9px] text-slate-650 font-mono leading-tight">
+                    <div className="text-[12px] text-slate-650 font-mono leading-tight">
                       Caja libre optimizada contra compromisos vigentes.
                     </div>
                   </div>
@@ -2502,18 +2525,18 @@ export default function TobiramaFinancialOS() {
                 <div className="glass-panel rounded-2xl p-6 bg-[#0a0b0d]/50 border-white/[0.04] hover:border-white/[0.08] transition-all">
                   <div className="flex justify-between items-center mb-6">
                     <div>
-                      <span className="text-[9px] text-slate-500 uppercase tracking-widest font-mono block font-semibold font-mono">CENTRO DE ANÁLISIS Y FLUJO DE CAJA</span>
+                      <span className="text-[12px] text-slate-500 uppercase tracking-widest font-mono block font-semibold font-mono">CENTRO DE ANíLISIS Y FLUJO DE CAJA</span>
                       <h4 className="text-sm font-bold text-white mt-1 uppercase tracking-wider">DIAGNÓSTICO DE MOVIMIENTOS Y REPORTES</h4>
                     </div>
-                    <span className="text-[10px] text-emerald-400 font-mono animate-pulse">● Sincronizado en tiempo real</span>
+                    <span className="text-[12px] text-emerald-400 font-mono animate-pulse">â— Sincronizado en tiempo real</span>
                   </div>
 
                   <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                     {/* Panel 1: Ranking de Egresos */}
                     <div className="space-y-4 bg-black border border-white/[0.02] p-5 rounded-xl">
                       <div className="flex justify-between items-center border-b border-white/[0.04] pb-2">
-                        <span className="text-[10px] text-slate-400 font-mono font-bold uppercase">Categorías de Mayor Consumo</span>
-                        <span className="text-[9px] text-slate-655 font-mono">Orden por gasto</span>
+                        <span className="text-[12px] text-slate-400 font-mono font-bold uppercase">Categorías de Mayor Consumo</span>
+                        <span className="text-[12px] text-slate-655 font-mono">Orden por gasto</span>
                       </div>
                       <div className="space-y-3 max-h-[280px] overflow-y-auto pr-1">
                         {flowMetrics.sortedCats.length > 0 ? (
@@ -2523,9 +2546,9 @@ export default function TobiramaFinancialOS() {
                               <div key={item.category} className={`space-y-1.5 p-2.5 rounded-lg transition-all border ${
                                 isTop ? "bg-white/[0.02] border-yellow-500/20" : "bg-transparent border-transparent"
                               }`}>
-                                <div className="flex justify-between items-center text-[10px] font-mono">
+                                <div className="flex justify-between items-center text-[12px] font-mono">
                                   <div className="flex items-center gap-1.5 min-w-0">
-                                    {isTop && <span className="text-yellow-400 text-[10px]">👑</span>}
+                                    {isTop && <span className="text-yellow-400 text-[12px]">👑</span>}
                                     <span className="text-slate-300 font-bold truncate">{item.category}</span>
                                   </div>
                                   <span className="text-slate-400 font-bold">{formatCOP(item.amount)}</span>
@@ -2551,30 +2574,30 @@ export default function TobiramaFinancialOS() {
                     <div className="space-y-4 bg-black border border-white/[0.02] p-5 rounded-xl flex flex-col justify-between">
                       <div className="space-y-4">
                         <div className="flex justify-between items-center border-b border-white/[0.04] pb-2">
-                          <span className="text-[10px] text-slate-400 font-mono font-bold uppercase">Resumen Mensual de Caja</span>
-                          <span className="text-[9px] text-slate-655 font-mono">Flujos</span>
+                          <span className="text-[12px] text-slate-400 font-mono font-bold uppercase">Resumen Mensual de Caja</span>
+                          <span className="text-[12px] text-slate-655 font-mono">Flujos</span>
                         </div>
                         <div className="grid grid-cols-2 gap-3">
                           <div className="p-3 bg-[#050608] rounded-xl border border-white/[0.02]">
-                            <span className="text-[9px] text-slate-600 font-mono block">INGRESOS</span>
+                            <span className="text-[12px] text-slate-600 font-mono block">INGRESOS</span>
                             <span className="text-xs font-bold font-mono text-emerald-400 mt-1 block">
                               +{formatCOP(flowMetrics.totalIncomes)}
                             </span>
                           </div>
                           <div className="p-3 bg-[#050608] rounded-xl border border-white/[0.02]">
-                            <span className="text-[9px] text-slate-600 font-mono block">EGRESOS</span>
+                            <span className="text-[12px] text-slate-600 font-mono block">EGRESOS</span>
                             <span className="text-xs font-bold font-mono text-red-400 mt-1 block">
                               -{formatCOP(flowMetrics.totalExpenses)}
                             </span>
                           </div>
                           <div className="p-3 bg-[#050608] rounded-xl border border-white/[0.02]">
-                            <span className="text-[9px] text-slate-600 font-mono block">RESERVAS / AHORRO</span>
+                            <span className="text-[12px] text-slate-600 font-mono block">RESERVAS / AHORRO</span>
                             <span className="text-xs font-bold font-mono text-blue-400 mt-1 block">
                               {formatCOP(flowMetrics.totalReserves)}
                             </span>
                           </div>
                           <div className="p-3 bg-[#050608] rounded-xl border border-white/[0.02]">
-                            <span className="text-[9px] text-slate-600 font-mono block">LIQUIDEZ NETO</span>
+                            <span className="text-[12px] text-slate-600 font-mono block">LIQUIDEZ NETO</span>
                             <span className="text-xs font-bold font-mono text-white mt-1 block">
                               {formatCOP(flowMetrics.totalIncomes - flowMetrics.totalExpenses - flowMetrics.totalReserves)}
                             </span>
@@ -2584,7 +2607,7 @@ export default function TobiramaFinancialOS() {
 
                       {/* Small visual indicator */}
                       <div className="space-y-1 pt-4 border-t border-white/[0.02] mt-auto">
-                        <div className="flex justify-between text-[9px] text-slate-500 font-mono">
+                        <div className="flex justify-between text-[12px] text-slate-500 font-mono">
                           <span>Inflow vs Outflow</span>
                           <span>Ratio: {flowMetrics.spendRatio.toFixed(1)}%</span>
                         </div>
@@ -2599,11 +2622,11 @@ export default function TobiramaFinancialOS() {
                     <div className="space-y-4 bg-black border border-white/[0.02] p-5 rounded-xl flex flex-col justify-between">
                       <div className="space-y-3">
                         <div className="flex justify-between items-center border-b border-white/[0.04] pb-2">
-                          <span className="text-[10px] text-slate-400 font-mono font-bold uppercase">Diagnóstico Financiero</span>
+                          <span className="text-[12px] text-slate-400 font-mono font-bold uppercase">Diagnóstico Financiero</span>
                           <button
                             onClick={loadAiTips}
                             disabled={isLoadingTips}
-                            className="text-[9px] text-blue-400 hover:text-blue-300 font-mono bg-transparent border-0 cursor-pointer transition-all hover:underline"
+                            className="text-[12px] text-blue-400 hover:text-blue-300 font-mono bg-transparent border-0 cursor-pointer transition-all hover:underline"
                           >
                             {isLoadingTips ? "Analizando... 🤖" : "Refrescar AI 🤖"}
                           </button>
@@ -2613,7 +2636,7 @@ export default function TobiramaFinancialOS() {
                         {isLoadingTips ? (
                           <div className="py-6 flex flex-col items-center justify-center gap-2">
                             <div className="h-4 w-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
-                            <span className="text-[9px] font-mono text-slate-500 uppercase tracking-widest">Analizando con Tobirama AI...</span>
+                            <span className="text-[12px] font-mono text-slate-500 uppercase tracking-widest">Analizando con Tobirama AI...</span>
                           </div>
                         ) : aiTips.length > 0 ? (
                           <div className="space-y-2.5 max-h-[220px] overflow-y-auto pr-1">
@@ -2626,11 +2649,11 @@ export default function TobiramaFinancialOS() {
                                   "bg-blue-500/[0.03] border-blue-500/15 text-blue-355"
                                 }`}
                               >
-                                <div className="flex items-center gap-1.5 font-mono text-[9px] font-bold uppercase">
-                                  <span>{tip.gravedad === "WARNING" ? "⚠️" : tip.gravedad === "SUCCESS" ? "✓" : "ℹ"}</span>
+                                <div className="flex items-center gap-1.5 font-mono text-[12px] font-bold uppercase">
+                                  <span>{tip.gravedad === "WARNING" ? "⚠️ï¸" : tip.gravedad === "SUCCESS" ? "✓" : "ℹ️"}</span>
                                   <span>{tip.titulo}</span>
                                 </div>
-                                <p className="text-[8.5px] font-mono leading-relaxed mt-1 text-slate-400">{tip.consejo}</p>
+                                <p className="text-[13px] font-mono leading-relaxed mt-1 text-slate-400">{tip.consejo}</p>
                               </div>
                             ))}
                           </div>
@@ -2651,7 +2674,7 @@ export default function TobiramaFinancialOS() {
                       </div>
 
                       {!isLoadingTips && aiTips.length === 0 && (
-                        <div className="mt-4 p-2.5 rounded-lg bg-emerald-500/5 border border-emerald-500/10 text-[9px] font-mono text-emerald-400 leading-normal flex items-center gap-2">
+                        <div className="mt-4 p-2.5 rounded-lg bg-emerald-500/5 border border-emerald-500/10 text-[12px] font-mono text-emerald-400 leading-normal flex items-center gap-2">
                           <span>⚡</span>
                           <span>
                             {flowMetrics.spendRatio > 70 
@@ -2669,7 +2692,7 @@ export default function TobiramaFinancialOS() {
                 <div className="glass-panel rounded-2xl p-6 bg-[#0a0b0d]/50 border-white/[0.04] hover:border-white/[0.08] transition-all">
                   <div className="flex justify-between items-center mb-6">
                     <div>
-                      <span className="text-[9px] text-slate-500 uppercase tracking-widest font-mono block font-semibold">SEGUIMIENTO DE CRÉDITOS</span>
+                      <span className="text-[12px] text-slate-500 uppercase tracking-widest font-mono block font-semibold">SEGUIMIENTO DE CRÉDITOS</span>
                       <h4 className="text-sm font-bold text-white mt-1 uppercase tracking-wider">CRÉDITOS Y OBLIGACIONES FINANCIERAS</h4>
                     </div>
                     <button
@@ -2715,7 +2738,7 @@ export default function TobiramaFinancialOS() {
                             <div className="flex justify-between items-start">
                               <div>
                                 <h5 className="text-xs font-bold text-slate-200">{credit.name}</h5>
-                                <span className="text-[9px] text-slate-500 uppercase tracking-wider font-mono mt-0.5 block">
+                                <span className="text-[12px] text-slate-500 uppercase tracking-wider font-mono mt-0.5 block">
                                   {credit.category}
                                 </span>
                               </div>
@@ -2730,7 +2753,7 @@ export default function TobiramaFinancialOS() {
 
                             {/* Installment Progress */}
                             <div className="space-y-1">
-                              <div className="flex justify-between text-[9px] font-mono text-slate-400">
+                              <div className="flex justify-between text-[12px] font-mono text-slate-400">
                                 <span>Abono de Cuotas</span>
                                 <span>
                                   {credit.paidInstallments}/{credit.totalInstallments} ({Math.round(cuotasPercent)}%)
@@ -2746,7 +2769,7 @@ export default function TobiramaFinancialOS() {
 
                             {/* Debt Progress */}
                             <div className="space-y-1">
-                              <div className="flex justify-between text-[9px] font-mono text-slate-400">
+                              <div className="flex justify-between text-[12px] font-mono text-slate-400">
                                 <span>Saldo Amortizado</span>
                                 <span>{Math.round(debtPercent)}%</span>
                               </div>
@@ -2756,13 +2779,13 @@ export default function TobiramaFinancialOS() {
                                   style={{ width: `${Math.min(100, Math.max(0, debtPercent))}%` }}
                                 />
                               </div>
-                              <div className="flex justify-between text-[9px] font-mono text-slate-500 pt-0.5">
+                              <div className="flex justify-between text-[12px] font-mono text-slate-500 pt-0.5">
                                 <span>P.: {formatCOP(credit.remainingAmount)}</span>
                                 <span>T.: {formatCOP(credit.totalAmount)}</span>
                               </div>
                             </div>
 
-                            <div className="pt-2.5 border-t border-white/[0.02] flex flex-col gap-1.5 text-[9px] font-mono">
+                            <div className="pt-2.5 border-t border-white/[0.02] flex flex-col gap-1.5 text-[12px] font-mono">
                               <div className="flex justify-between items-center">
                                 <span className="text-slate-500">PAGO MENSUAL</span>
                                 <span className="text-slate-200 font-bold">{formatCOP(credit.monthlyPayment)}</span>
@@ -2794,7 +2817,7 @@ export default function TobiramaFinancialOS() {
                   <div className="overflow-x-auto">
                     <table className="w-full text-left border-collapse font-mono text-xs">
                       <thead>
-                        <tr className="border-b border-white/[0.04] bg-slate-950/20 text-slate-500 uppercase tracking-widest text-[9px] font-bold">
+                        <tr className="border-b border-white/[0.04] bg-slate-950/20 text-slate-500 uppercase tracking-widest text-[12px] font-bold">
                           <th className="px-6 py-3.5">Compromiso / Categoría</th>
                           <th className="px-6 py-3.5">Estado</th>
                           <th className="px-6 py-3.5 text-right">Volumen Pagado</th>
@@ -2818,11 +2841,11 @@ export default function TobiramaFinancialOS() {
                                 <Building2 className="h-4 w-4 text-slate-600" />
                                 <div>
                                   <div>{item.item}</div>
-                                  <div className="text-[9px] text-slate-500 uppercase tracking-tight mt-0.5">{item.category}</div>
+                                  <div className="text-[12px] text-slate-500 uppercase tracking-tight mt-0.5">{item.category}</div>
                                 </div>
                               </td>
                               <td className="px-6 py-4">
-                                <span className={`px-2.5 py-0.5 rounded-full text-[9px] border font-bold ${
+                                <span className={`px-2.5 py-0.5 rounded-full text-[12px] border font-bold ${
                                   isPaid 
                                     ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" 
                                     : "bg-yellow-500/10 text-yellow-400 border-yellow-500/20"
@@ -2905,7 +2928,7 @@ export default function TobiramaFinancialOS() {
                                   setQuickCategory("Vivienda");
                                 }
                               }}
-                              className={`py-2.5 px-2 rounded-xl border text-[10px] font-bold uppercase tracking-wider font-mono transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                              className={`py-2.5 px-2 rounded-xl border text-[12px] font-bold uppercase tracking-wider font-mono transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
                                 isSel ? t.activeClass : `bg-black border-transparent ${t.inactiveClass}`
                               }`}
                             >
@@ -2951,7 +2974,7 @@ export default function TobiramaFinancialOS() {
                       </div>
 
                       <div className="text-center space-y-0.5">
-                        <span className="text-[9px] text-slate-550 uppercase tracking-widest font-mono block font-semibold">REGISTRO DE OPERACIÓN</span>
+                        <span className="text-[12px] text-slate-550 uppercase tracking-widest font-mono block font-semibold">REGISTRO DE OPERACIÓN</span>
                         <h3 className={`text-xs font-bold font-mono tracking-tight ${visualFormConfig.typeColor}`}>
                           {quickType === "Ingreso" ? "INGRESO DE FONDOS" : quickType === "Movimiento a Reserva" ? "TRASLADO A RESERVA / AHORRO" : "EGRESO / GASTO EXTRA DE CAJA"}
                         </h3>
@@ -2959,7 +2982,7 @@ export default function TobiramaFinancialOS() {
 
                       {/* Display amount & direct edit field */}
                       <div className="space-y-1.5 relative">
-                        <span className="text-[9px] text-slate-500 uppercase tracking-widest font-mono block font-semibold">{visualFormConfig.amountLabel}</span>
+                        <span className="text-[12px] text-slate-500 uppercase tracking-widest font-mono block font-semibold">{visualFormConfig.amountLabel}</span>
                         <div className={`relative flex items-center bg-[#090a0c]/60 border border-white/[0.04] rounded-2xl px-4 py-3.5 hover:border-white/[0.08] transition-all ${visualFormConfig.amountRing}`}>
                           <span className="text-slate-500 font-mono text-lg font-bold mr-2 select-none">$</span>
                           
@@ -2986,7 +3009,7 @@ export default function TobiramaFinancialOS() {
 
                       {/* Description Input */}
                       <div className="space-y-1.5">
-                        <span className="text-[9px] text-slate-500 uppercase tracking-widest font-mono block font-semibold">{visualFormConfig.descLabel}</span>
+                        <span className="text-[12px] text-slate-500 uppercase tracking-widest font-mono block font-semibold">{visualFormConfig.descLabel}</span>
                         <input
                           type="text"
                           placeholder={visualFormConfig.descPlaceholder}
@@ -2996,7 +3019,7 @@ export default function TobiramaFinancialOS() {
                         />
                       </div>
 
-                      {/* INPUT MODES ROUTING — min-h evita el brinco al cambiar de modo */}
+                      {/* INPUT MODES ROUTING â€” min-h evita el brinco al cambiar de modo */}
                       <div className="min-h-[200px]">
                       {inputMode === "keypad" && (
                         <div className="space-y-3 pt-1 border-t border-white/[0.03]">
@@ -3017,7 +3040,7 @@ export default function TobiramaFinancialOS() {
                                     return formatNumberCOP(current + pill.value);
                                   });
                                 }}
-                                className="flex-1 py-1.5 rounded-lg bg-[#090a0c] border border-white/[0.02] hover:border-white/[0.08] text-[10px] font-mono text-slate-500 hover:text-white transition-all cursor-pointer"
+                                className="flex-1 py-1.5 rounded-lg bg-[#090a0c] border border-white/[0.02] hover:border-white/[0.08] text-[12px] font-mono text-slate-500 hover:text-white transition-all cursor-pointer"
                               >
                                 {pill.label}
                               </button>
@@ -3057,14 +3080,14 @@ export default function TobiramaFinancialOS() {
                                     isBack ? "bg-red-500/5 hover:bg-red-500/10 border-red-500/10 text-red-400" : "bg-[#090a0c]/40 hover:bg-[#090a0c] border-white/[0.02]"
                                   }`}
                                 >
-                                  {isBack ? "←" : key}
+                                  {isBack ? "â†" : key}
                                 </button>
                               );
                             })}
                             <button
                               type="button"
                               onClick={() => setQuickAmount("0,00")}
-                              className="col-span-4 py-1.5 text-[9px] font-mono text-slate-600 hover:text-slate-400 transition-colors uppercase tracking-widest cursor-pointer"
+                              className="col-span-4 py-1.5 text-[12px] font-mono text-slate-600 hover:text-slate-400 transition-colors uppercase tracking-widest cursor-pointer"
                             >
                               Limpiar Teclado
                             </button>
@@ -3088,16 +3111,16 @@ export default function TobiramaFinancialOS() {
                           </button>
                           
                           <div className="space-y-1">
-                            <div className="text-2xs font-mono text-slate-300 min-h-[16px]">
+                            <div className="text-[11px] font-mono text-slate-300 min-h-[16px]">
                               {voiceText || "Presiona el micrófono para hablar..."}
                             </div>
-                            <p className="text-[9px] text-slate-600 italic max-w-xs mx-auto">
+                            <p className="text-[12px] text-slate-600 italic max-w-xs mx-auto">
                               Ej. "Gasto cincuenta mil en mercado con débito"
                             </p>
                           </div>
 
                           {voiceParsedInfo && (
-                            <div className="p-2.5 rounded-xl bg-white/[0.01] border border-white/[0.04] font-mono text-[9px] text-emerald-400">
+                            <div className="p-2.5 rounded-xl bg-white/[0.01] border border-white/[0.04] font-mono text-[12px] text-emerald-400">
                               {voiceParsedInfo}
                             </div>
                           )}
@@ -3107,28 +3130,35 @@ export default function TobiramaFinancialOS() {
                       {inputMode === "invoice" && (
                         <div className="border-t border-white/[0.03] space-y-3 pt-3">
 
-                          {/* Drop zone */}
-                          {!scanSuccess && (
-                            <label className={`border border-dashed rounded-2xl p-5 flex flex-col items-center justify-center gap-2 transition-all ${
-                              isScanning
-                                ? "border-blue-500/40 bg-blue-500/[0.03] cursor-not-allowed"
-                                : "border-white/[0.06] hover:border-white/[0.14] bg-[#090a0c]/20 hover:bg-[#090a0c]/45 cursor-pointer"
-                            }`}>
-                              <Upload className={`h-5 w-5 ${isScanning ? "text-blue-400" : "text-slate-500"}`} />
-                              <span className="text-[11px] font-mono text-slate-300">
-                                {isScanning ? "Procesando con IA..." : "Toca para subir tu factura"}
-                              </span>
-                              <span className="text-[9px] text-slate-600">Toma o sube una foto de la factura</span>
-                              <span className="text-[8px] text-slate-700">💡 Necesitas buena iluminación y la foto enfocada</span>
-                              <input ref={invoiceInputRef} type="file" accept="image/*" capture="environment" onChange={handleInvoiceUpload} className="hidden" disabled={isScanning} />
+                          {/* Zona de carga â€” visible cuando no hay preview */}
+                          {!invoicePreviewUrl && !isScanning && (
+                            <label className="border border-dashed border-white/[0.08] hover:border-blue-500/40 rounded-2xl p-6 flex flex-col items-center justify-center gap-2.5 transition-all bg-[#090a0c]/20 hover:bg-[#090a0c]/45 cursor-pointer">
+                              <Upload className="h-6 w-6 text-slate-400" />
+                              <span className="text-[13px] font-mono text-slate-200 font-semibold">Toca para fotografiar tu factura</span>
+                              <span className="text-[12px] text-slate-500 text-center">La IA leerá el monto, comercio y fecha automáticamente</span>
+                              <input
+                                ref={invoiceInputRef}
+                                type="file"
+                                accept="image/*"
+                                capture="environment"
+                                onChange={handleInvoiceUpload}
+                                className="hidden"
+                              />
                             </label>
                           )}
 
-                          {/* Progress bar */}
+                          {/* Barra de progreso mientras escanea */}
                           {isScanning && (
-                            <div className="space-y-1.5">
-                              <div className="flex justify-between text-[9px] font-mono text-slate-500">
-                                <span className="text-blue-400 animate-pulse">🔍 Gemini AI analizando imagen...</span>
+                            <div className="space-y-2">
+                              {/* Preview de la imagen mientras carga */}
+                              {invoicePreviewUrl && (
+                                <div className="rounded-xl overflow-hidden border border-white/[0.06] max-h-36">
+                                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                                  <img src={invoicePreviewUrl} alt="Escaneando..." className="w-full max-h-36 object-contain bg-black/60 opacity-60" />
+                                </div>
+                              )}
+                              <div className="flex justify-between text-[12px] font-mono text-slate-500">
+                                <span className="text-blue-400 animate-pulse">🔎 Analizando factura con IA...</span>
                                 <span>{Math.round(scanProgress)}%</span>
                               </div>
                               <div className="h-1.5 w-full bg-zinc-900 rounded-full overflow-hidden">
@@ -3138,44 +3168,64 @@ export default function TobiramaFinancialOS() {
                                   transition={{ duration: 0.4, ease: "easeOut" }}
                                 />
                               </div>
-                              <p className="text-[8.5px] text-slate-600 font-mono text-center">Extrayendo comercio, monto, fecha y categoría...</p>
+                              <p className="text-[13px] text-slate-600 font-mono text-center">Extrayendo comercio, monto, fecha y categoría...</p>
                             </div>
                           )}
 
-                          {/* Result preview card */}
-                          {scanSuccess && scanResult && (
-                            <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/[0.03] p-3 space-y-2">
-                              <div className="flex items-center gap-1.5 text-emerald-400 text-[9px] font-mono font-bold uppercase">
-                                <Check className="h-3.5 w-3.5" />
-                                <span>Factura leída correctamente</span>
+                          {/* Resultado: preview + datos extraídos */}
+                          {scanSuccess && scanResult && invoicePreviewUrl && (
+                            <div className="space-y-2">
+                              {/* Imagen de la factura escaneada */}
+                              <div className="relative rounded-xl overflow-hidden border border-emerald-500/20">
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img src={invoicePreviewUrl} alt="Factura escaneada" className="w-full max-h-40 object-contain bg-black/60" />
+                                <div className="absolute top-1.5 right-1.5">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      URL.revokeObjectURL(invoicePreviewUrl);
+                                      setInvoicePreviewUrl(null);
+                                      setScanSuccess(false);
+                                      setScanResult(null);
+                                      setScanProgress(0);
+                                      if (invoiceInputRef.current) invoiceInputRef.current.value = "";
+                                    }}
+                                    className="bg-black/70 hover:bg-black/90 border border-white/10 text-slate-400 hover:text-white rounded-lg px-2 py-1 text-[12px] font-mono transition-all cursor-pointer"
+                                  >
+                                    âœ• Nueva foto
+                                  </button>
+                                </div>
                               </div>
-                              <div className="grid grid-cols-2 gap-1.5 text-[9px] font-mono">
-                                <div className="bg-black/40 rounded-lg p-2">
-                                  <span className="text-slate-600 block">COMERCIO</span>
-                                  <span className="text-slate-200 font-bold truncate block">{scanResult.comercio}</span>
+
+                              {/* Datos extraídos */}
+                              <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/[0.03] p-2.5 space-y-1.5">
+                                <div className="flex items-center gap-1.5 text-emerald-400 text-[12px] font-mono font-bold">
+                                  <Check className="h-3 w-3" />
+                                  <span>DATOS EXTRAíDOS AUTOMíTICAMENTE</span>
                                 </div>
-                                <div className="bg-black/40 rounded-lg p-2">
-                                  <span className="text-slate-600 block">TOTAL</span>
-                                  <span className="text-emerald-400 font-bold block">{formatCOP(scanResult.total)}</span>
+                                <div className="grid grid-cols-2 gap-1 text-[12px] font-mono">
+                                  <div className="bg-black/40 rounded-lg p-1.5">
+                                    <span className="text-slate-600 block text-[13px]">COMERCIO</span>
+                                    <span className="text-slate-200 font-bold truncate block">{scanResult.comercio}</span>
+                                  </div>
+                                  <div className="bg-black/40 rounded-lg p-1.5">
+                                    <span className="text-slate-600 block text-[13px]">TOTAL</span>
+                                    <span className="text-emerald-400 font-bold block">{formatCOP(scanResult.total)}</span>
+                                  </div>
+                                  <div className="bg-black/40 rounded-lg p-1.5">
+                                    <span className="text-slate-600 block text-[13px]">FECHA</span>
+                                    <span className="text-slate-200 font-bold block">{scanResult.fecha}</span>
+                                  </div>
+                                  <div className="bg-black/40 rounded-lg p-1.5">
+                                    <span className="text-slate-600 block text-[13px]">CATEGORíA</span>
+                                    <span className="text-slate-200 font-bold truncate block">{scanResult.categoria}</span>
+                                  </div>
                                 </div>
-                                <div className="bg-black/40 rounded-lg p-2">
-                                  <span className="text-slate-600 block">FECHA</span>
-                                  <span className="text-slate-200 font-bold block">{scanResult.fecha}</span>
-                                </div>
-                                <div className="bg-black/40 rounded-lg p-2">
-                                  <span className="text-slate-600 block">CATEGORÍA</span>
-                                  <span className="text-slate-200 font-bold truncate block">{scanResult.categoria}</span>
-                                </div>
+                                <p className="text-[13px] text-slate-600 font-mono">Verifica los datos arriba antes de guardar.</p>
                               </div>
-                              <button
-                                type="button"
-                                onClick={() => { setScanSuccess(false); setScanResult(null); setScanProgress(0); }}
-                                className="text-[8px] font-mono text-slate-600 hover:text-slate-400 uppercase tracking-widest w-full text-center cursor-pointer"
-                              >
-                                Escanear otra factura
-                              </button>
                             </div>
                           )}
+
                         </div>
                       )}
 
@@ -3183,7 +3233,7 @@ export default function TobiramaFinancialOS() {
 
                       {/* Category Selector Grid */}
                       <div className="space-y-2">
-                        <span className="text-[9px] text-slate-500 uppercase tracking-widest font-mono block font-semibold">Categoría</span>
+                        <span className="text-[12px] text-slate-500 uppercase tracking-widest font-mono block font-semibold">Categoría</span>
                         <div className="grid grid-cols-2 gap-2">
                           {categoriesForSelection.map((cat) => {
                             const isSel = quickCategory === cat;
@@ -3208,7 +3258,7 @@ export default function TobiramaFinancialOS() {
                                 ) : (
                                   getCategoryIcon(cat)
                                 )}
-                                <span className="text-[9px] font-bold font-mono tracking-tight">{cat}</span>
+                                <span className="text-[12px] font-bold font-mono tracking-tight">{cat}</span>
                               </button>
                             );
                           })}
@@ -3218,7 +3268,7 @@ export default function TobiramaFinancialOS() {
                       {/* Custom Category Input if "Otra..." is selected */}
                       {quickCategory === "Otra..." && (
                         <div className="space-y-1.5 animate-fadeIn">
-                          <span className="text-[9px] text-slate-500 uppercase tracking-widest font-mono block font-semibold">Nombre de la Nueva Categoría</span>
+                          <span className="text-[12px] text-slate-500 uppercase tracking-widest font-mono block font-semibold">Nombre de la Nueva Categoría</span>
                           <input
                             type="text"
                             placeholder="Nombre de la nueva categoría (Ej. Mascotas)"
@@ -3232,7 +3282,7 @@ export default function TobiramaFinancialOS() {
 
                       {/* Payment method segmented control */}
                       <div className="space-y-2">
-                        <span className="text-[9px] text-slate-550 uppercase tracking-widest font-mono block font-semibold">{visualFormConfig.payMethodLabel}</span>
+                        <span className="text-[12px] text-slate-550 uppercase tracking-widest font-mono block font-semibold">{visualFormConfig.payMethodLabel}</span>
                         <div className="grid grid-cols-3 gap-1 p-0.5 bg-[#090a0c] rounded-xl border border-white/[0.02]">
                           {(["Débito", "TC", "Efectivo"] as PaymentMethod[]).map((method) => {
                             const isSel = quickMethod === method;
@@ -3241,7 +3291,7 @@ export default function TobiramaFinancialOS() {
                                 key={method}
                                 type="button"
                                 onClick={() => setQuickMethod(method)}
-                                className={`py-1.5 rounded-lg text-[9px] font-bold uppercase tracking-wider font-mono transition-all cursor-pointer relative ${
+                                className={`py-1.5 rounded-lg text-[12px] font-bold uppercase tracking-wider font-mono transition-all cursor-pointer relative ${
                                   isSel ? "text-white" : "text-slate-650 hover:text-slate-400"
                                 }`}
                               >
@@ -3262,7 +3312,7 @@ export default function TobiramaFinancialOS() {
                       {/* Date & Classification row */}
                       <div className="grid grid-cols-2 gap-4">
                         <div className="space-y-1.5">
-                          <span className="text-[9px] text-slate-555 uppercase tracking-widest font-mono block font-semibold">Fecha</span>
+                          <span className="text-[12px] text-slate-555 uppercase tracking-widest font-mono block font-semibold">Fecha</span>
                           <input
                             type="date"
                             value={quickDate}
@@ -3272,7 +3322,7 @@ export default function TobiramaFinancialOS() {
                         </div>
 
                         <div className="space-y-1.5">
-                          <span className="text-[9px] text-slate-555 uppercase tracking-widest font-mono block font-semibold">Clasificación</span>
+                          <span className="text-[12px] text-slate-555 uppercase tracking-widest font-mono block font-semibold">Clasificación</span>
                           <div className="grid grid-cols-2 gap-1 p-0.5 bg-[#090a0c] rounded-xl border border-white/[0.02] h-[34px]">
                             {[
                               { value: true, label: "Fijo" },
@@ -3284,7 +3334,7 @@ export default function TobiramaFinancialOS() {
                                   key={opt.label}
                                   type="button"
                                   onClick={() => setQuickIsFixed(opt.value)}
-                                  className={`py-1 rounded-lg text-[9px] font-bold uppercase tracking-wider font-mono transition-all cursor-pointer relative ${
+                                  className={`py-1 rounded-lg text-[12px] font-bold uppercase tracking-wider font-mono transition-all cursor-pointer relative ${
                                     isSel ? "text-white" : "text-slate-655 hover:text-slate-400"
                                   }`}
                                 >
@@ -3306,20 +3356,20 @@ export default function TobiramaFinancialOS() {
                       {/* Large Glowing Confirm Button */}
                       <button
                         onClick={handleQuickRegister}
-                        disabled={parseFormattedCOP(quickAmount) === 0 || isScanning || isActionPending || justSaved}
+                        disabled={parseFormattedCOP(quickAmount) === 0 || isScanning}
                         className={`w-full py-3.5 rounded-2xl font-bold tracking-widest uppercase text-xs shadow-lg transition-all duration-300 active:scale-[0.99] flex items-center justify-center gap-1.5 cursor-pointer ${
                           justSaved
                             ? "bg-emerald-500/20 border border-emerald-400/40 text-emerald-300 scale-[0.99]"
                             : visualFormConfig.confirmBtnBg
                         } ${
-                          parseFormattedCOP(quickAmount) === 0 || isScanning || isActionPending ? "opacity-35 pointer-events-none" : ""
+                          parseFormattedCOP(quickAmount) === 0 || isScanning ? "opacity-35 pointer-events-none" : ""
                         }`}
                       >
                         {justSaved ? "✓ ¡Guardado!" : visualFormConfig.confirmBtnText}
                       </button>
 
                       {quickSuccessMsg && (
-                        <div className="absolute inset-x-8 bottom-20 p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-center font-mono text-[10px] text-emerald-400 z-20">
+                        <div className="absolute inset-x-8 bottom-20 p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-center font-mono text-[12px] text-emerald-400 z-20">
                           Movimiento registrado correctamente en el Ledger.
                         </div>
                       )}
@@ -3330,7 +3380,7 @@ export default function TobiramaFinancialOS() {
                           setQuickAmount("0,00");
                           setQuickDescription("");
                         }}
-                        className="text-center font-mono text-[9px] text-slate-600 hover:text-slate-400 block w-full uppercase tracking-wider cursor-pointer"
+                        className="text-center font-mono text-[12px] text-slate-600 hover:text-slate-400 block w-full uppercase tracking-wider cursor-pointer"
                       >
                         Cancelar Registro
                       </button>
@@ -3387,13 +3437,13 @@ export default function TobiramaFinancialOS() {
                                       {tx.description}
                                     </div>
                                     <div className="flex flex-wrap items-center gap-1.5 mt-1">
-                                      <span className="text-[10px] font-mono text-slate-500">
+                                      <span className="text-[12px] font-mono text-slate-500">
                                         {tx.date}
                                       </span>
-                                      <span className="text-[9px] font-mono bg-black border border-white/[0.04] text-slate-500 px-1.5 py-0.25 rounded">
+                                      <span className="text-[12px] font-mono bg-black border border-white/[0.04] text-slate-500 px-1.5 py-0.25 rounded">
                                         {tx.paymentMethod === "TC" ? "CRÉDITO" : tx.paymentMethod.toUpperCase()}
                                       </span>
-                                      <span className="text-[10px] font-semibold text-slate-550 font-mono">
+                                      <span className="text-[12px] font-semibold text-slate-550 font-mono">
                                         {tx.category}
                                       </span>
                                     </div>
@@ -3411,7 +3461,7 @@ export default function TobiramaFinancialOS() {
                                     }`}>
                                       {isIncome ? "+" : "-"}{formatCOP(tx.amount)}
                                     </div>
-                                    <span className="text-[9px] font-mono uppercase text-slate-550 mt-0.5 block">
+                                    <span className="text-[12px] font-mono uppercase text-slate-550 mt-0.5 block">
                                       {tx.type}
                                     </span>
                                   </div>
@@ -3437,7 +3487,7 @@ export default function TobiramaFinancialOS() {
               </motion.div>
             )}
 
-            {/* --- VISTA D: AUDITORÍA (BUDGET GRID) --- */}
+            {/* --- VISTA D: AUDITORíA (BUDGET GRID) --- */}
             {activeView === "audit" && (
               <motion.div
                 key="audit"
@@ -3486,7 +3536,7 @@ export default function TobiramaFinancialOS() {
                       <thead>
                         <tr className="border-b border-white/[0.04] bg-slate-900/10 text-xs font-semibold text-slate-400 uppercase font-mono tracking-wider">
                           <th className="px-6 py-4.5">Categoría</th>
-                          <th className="px-6 py-4.5">Ítem / Compromiso</th>
+                          <th className="px-6 py-4.5">ítem / Compromiso</th>
                           <th className="px-6 py-4.5 text-right">Presupuesto Asignado</th>
                           <th className="px-6 py-4.5 text-right">Ya Pagué (Real)</th>
                           <th className="px-6 py-4.5 text-right">Falta por Pagar</th>
@@ -3506,10 +3556,10 @@ export default function TobiramaFinancialOS() {
                             >
                               <td className="px-6 py-4.5">
                                 <div className="flex items-center gap-2">
-                                  <span className={`px-2 py-0.5 rounded text-[10px] font-mono border ${getCategoryColor(item.category)}`}>
+                                  <span className={`px-2 py-0.5 rounded text-[12px] font-mono border ${getCategoryColor(item.category)}`}>
                                     {item.category}
                                   </span>
-                                  <span className={`px-1.5 py-0.25 rounded text-[8px] font-mono font-bold ${
+                                  <span className={`px-1.5 py-0.25 rounded text-[13px] font-mono font-bold ${
                                     item.isFixed 
                                       ? "bg-purple-500/10 text-purple-400 border border-purple-500/20" 
                                       : "bg-blue-500/10 text-blue-400 border border-blue-500/20"
@@ -3556,7 +3606,7 @@ export default function TobiramaFinancialOS() {
                               </td>
                               <td className="px-6 py-4.5 text-center space-x-2">
                                 {(item as any).isCredit ? (
-                                  <span className="text-[10px] text-slate-500 font-mono italic">Crédito Activo</span>
+                                  <span className="text-[12px] text-slate-500 font-mono italic">Crédito Activo</span>
                                 ) : (
                                   <>
                                     <button
@@ -3587,10 +3637,10 @@ export default function TobiramaFinancialOS() {
                   <div className="glass-panel rounded-2xl p-6 bg-[#0a0b0d]/50 border-white/[0.04] mt-6 space-y-4">
                     <div className="flex justify-between items-center border-b border-white/[0.04] pb-2">
                       <div>
-                        <span className="text-[9px] text-slate-500 uppercase tracking-widest font-mono block font-semibold">PANEL ADMINISTRATIVO</span>
+                        <span className="text-[12px] text-slate-500 uppercase tracking-widest font-mono block font-semibold">PANEL ADMINISTRATIVO</span>
                         <h4 className="text-sm font-bold text-white mt-1 uppercase tracking-wider">MANTENIMIENTO DE BASE DE DATOS</h4>
                       </div>
-                      <span className="text-[10px] text-slate-500 font-mono">
+                      <span className="text-[12px] text-slate-500 font-mono">
                         Estado: <span className="text-emerald-400 font-bold">CONECTADO</span>
                       </span>
                     </div>
@@ -3603,7 +3653,7 @@ export default function TobiramaFinancialOS() {
                         onClick={handleResetDb}
                         className="px-5 py-3 rounded-xl bg-red-650/10 hover:bg-red-650/20 border border-red-500/25 hover:border-red-500/40 text-red-400 hover:text-red-300 font-bold text-xs uppercase tracking-wider transition-all cursor-pointer flex-shrink-0"
                       >
-                        Restablecer Sistema (Borrar Todo) ⚠️
+                        Restablecer Sistema (Borrar Todo) ⚠️ï¸
                       </button>
                     </div>
                   </div>
@@ -3693,7 +3743,7 @@ export default function TobiramaFinancialOS() {
                           key={opt.label}
                           type="button"
                           onClick={() => setEditIsFixed(opt.value)}
-                          className={`py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider font-mono transition-all cursor-pointer relative ${
+                          className={`py-1 rounded-lg text-[12px] font-bold uppercase tracking-wider font-mono transition-all cursor-pointer relative ${
                             isSel ? "text-white" : "text-slate-650 hover:text-slate-400"
                           }`}
                         >
@@ -3765,7 +3815,7 @@ export default function TobiramaFinancialOS() {
 
               <form onSubmit={handleAddCreditSubmit} className="space-y-4">
                 <div>
-                  <label className="block text-[10px] font-mono uppercase text-slate-550 mb-1">Nombre de la Entidad / Préstamo</label>
+                  <label className="block text-[12px] font-mono uppercase text-slate-550 mb-1">Nombre de la Entidad / Préstamo</label>
                   <input
                     type="text"
                     required
@@ -3778,7 +3828,7 @@ export default function TobiramaFinancialOS() {
 
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-[10px] font-mono uppercase text-slate-550 mb-1">Cupo Total / Monto Prestado</label>
+                    <label className="block text-[12px] font-mono uppercase text-slate-550 mb-1">Cupo Total / Monto Prestado</label>
                     <div className="relative">
                       <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 font-mono text-xs">$</span>
                       <input
@@ -3796,7 +3846,7 @@ export default function TobiramaFinancialOS() {
                   </div>
 
                   <div>
-                    <label className="block text-[10px] font-mono uppercase text-slate-550 mb-1">Saldo Pendiente Actual</label>
+                    <label className="block text-[12px] font-mono uppercase text-slate-550 mb-1">Saldo Pendiente Actual</label>
                     <div className="relative">
                       <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 font-mono text-xs">$</span>
                       <input
@@ -3816,7 +3866,7 @@ export default function TobiramaFinancialOS() {
 
                 <div className="grid grid-cols-3 gap-3">
                   <div className="col-span-1">
-                    <label className="block text-[10px] font-mono uppercase text-slate-550 mb-1">Cuotas Totales</label>
+                    <label className="block text-[12px] font-mono uppercase text-slate-550 mb-1">Cuotas Totales</label>
                     <input
                       type="number"
                       required
@@ -3828,7 +3878,7 @@ export default function TobiramaFinancialOS() {
                   </div>
 
                   <div className="col-span-1">
-                    <label className="block text-[10px] font-mono uppercase text-slate-550 mb-1">Cuotas Pagas</label>
+                    <label className="block text-[12px] font-mono uppercase text-slate-550 mb-1">Cuotas Pagas</label>
                     <input
                       type="number"
                       required
@@ -3840,7 +3890,7 @@ export default function TobiramaFinancialOS() {
                   </div>
 
                   <div className="col-span-1">
-                    <label className="block text-[10px] font-mono uppercase text-slate-550 mb-1">Pago Mensual</label>
+                    <label className="block text-[12px] font-mono uppercase text-slate-550 mb-1">Pago Mensual</label>
                     <div className="relative">
                       <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 font-mono text-xs">$</span>
                       <input
@@ -3859,7 +3909,7 @@ export default function TobiramaFinancialOS() {
                 </div>
 
                 <div>
-                  <label className="block text-[10px] font-mono uppercase text-slate-550 mb-1">Categoría del Presupuesto (Asociar)</label>
+                  <label className="block text-[12px] font-mono uppercase text-slate-550 mb-1">Categoría del Presupuesto (Asociar)</label>
                   <select
                     required
                     value={creditForm.category}
@@ -3936,20 +3986,20 @@ export default function TobiramaFinancialOS() {
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: -10, scale: 0.98, transition: { duration: 0.15 } }}
                 layout
-                className={`w-full flex items-center gap-3.5 px-4.5 py-3.5 rounded-2xl bg-zinc-950/90 backdrop-blur-xl border ${ringColor} shadow-xl text-xs font-mono tracking-wide pointer-events-auto`}
+                className={`w-full flex items-center gap-3.5 px-4 py-3.5 rounded-2xl bg-zinc-950/95 backdrop-blur-xl border ${ringColor} shadow-xl pointer-events-auto`}
               >
-                <div className={`p-1.5 rounded-xl bg-white/[0.03] ${iconColor}`}>
-                  <IconComp className="h-4 w-4" />
+                <div className={`p-1.5 rounded-xl bg-white/[0.03] flex-shrink-0 ${iconColor}`}>
+                  <IconComp className="h-4.5 w-4.5" />
                 </div>
-                <div className="flex-1 text-slate-200 leading-relaxed font-sans font-medium">
+                <div className="flex-1 text-slate-100 text-[13px] leading-snug font-sans font-medium">
                   {toast.message}
                 </div>
                 <button
                   type="button"
                   onClick={() => setToasts((prev) => prev.filter((t) => t.id !== toast.id))}
-                  className="p-1 rounded-lg text-slate-500 hover:text-slate-300 hover:bg-white/[0.05] transition-all cursor-pointer animate-none"
+                  className="p-1.5 rounded-lg text-slate-500 hover:text-slate-300 hover:bg-white/[0.05] transition-all cursor-pointer flex-shrink-0"
                 >
-                  <X className="h-3.5 w-3.5" />
+                  <X className="h-4 w-4" />
                 </button>
               </motion.div>
             );
@@ -3958,12 +4008,12 @@ export default function TobiramaFinancialOS() {
       </div>
 
       {/* Bottom Navigation for Mobile */}
-      <div className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-[#050505]/95 backdrop-blur-xl border-t border-white/[0.04] px-4 py-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))]">
+      <div className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-[#050505]/98 backdrop-blur-xl border-t border-white/[0.05] px-2 py-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))]">
         <div className="flex justify-around items-center">
           {[
             { id: "dashboard", label: "Dashboard", icon: Layers },
             { id: "tracker", label: "Movimientos", icon: Coins },
-            { id: "audit", label: "Control mensual", icon: FileText }
+            { id: "audit", label: "Control", icon: FileText }
           ].map((item) => {
             const Icon = item.icon;
             const isActive = activeView === item.id;
@@ -3971,14 +4021,17 @@ export default function TobiramaFinancialOS() {
               <button
                 key={item.id}
                 onClick={() => setActiveView(item.id as "dashboard" | "tracker" | "audit")}
-                className="flex flex-col items-center gap-0.5 py-1 px-3 transition-all cursor-pointer bg-transparent border-0"
+                className="flex flex-col items-center gap-1 py-1.5 px-4 transition-all cursor-pointer bg-transparent border-0 min-h-[52px] justify-center"
               >
-                <div className={`p-1.5 rounded-xl transition-all ${isActive ? 'bg-white/[0.06] text-white border border-white/[0.08]' : 'text-slate-500 hover:text-slate-300'}`}>
+                <div className={`p-2 rounded-xl transition-all ${isActive ? 'bg-white/[0.07] text-white border border-white/[0.1]' : 'text-slate-500'}`}>
                   <Icon className="h-5 w-5" />
                 </div>
-                <span className={`text-[9px] font-mono font-medium tracking-wide transition-colors ${isActive ? 'text-white' : 'text-slate-500'}`}>
+                <span className={`text-[11px] font-medium tracking-wide transition-colors ${isActive ? 'text-white' : 'text-slate-600'}`}>
                   {item.label}
                 </span>
+                {isActive && (
+                  <div className="h-0.5 w-4 rounded-full bg-white/50 mt-0.5" />
+                )}
               </button>
             );
           })}
@@ -3987,3 +4040,4 @@ export default function TobiramaFinancialOS() {
     </div>
   );
 }
+

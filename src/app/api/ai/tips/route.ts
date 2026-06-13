@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { initDb, getTransactions } from "@/lib/db";
 import { authenticateRequest } from "@/lib/auth";
 
+export const maxDuration = 60; // Incrementar el tiempo de ejecución en Vercel a 60 segundos (evita error 503)
+
 // Función auxiliar para reintentar peticiones a Gemini con retraso exponencial ante un HTTP 429 (ResourceExhausted)
 async function fetchWithRetry(url: string, options: RequestInit, retries = 3, delay = 1200): Promise<Response> {
   let lastResponse: Response | null = null;
@@ -45,7 +47,7 @@ export async function GET(req: Request) {
       tipo: t.type
     }));
 
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
 
     const prompt = `Eres "Tobirama AI", un coach de finanzas personales para colombianos.
 Analiza las siguientes transacciones recientes y genera exactamente 3 tips financieros personalizados en español.

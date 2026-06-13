@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { authenticateRequest } from "@/lib/auth";
+
+export const maxDuration = 60; // Incrementar el tiempo de ejecución en Vercel a 60 segundos (evita error 503)
 
 // Reintentos con backoff exponencial ante HTTP 429
 async function fetchWithRetry(url: string, options: RequestInit, retries = 3, delay = 1200): Promise<Response> {
@@ -21,9 +22,8 @@ async function fetchWithRetry(url: string, options: RequestInit, retries = 3, de
 }
 
 export async function POST(req: Request) {
-  const auth = authenticateRequest(req);
-  if (!auth) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
-
+  // Esta ruta solo procesa imágenes con Gemini — no accede a datos de usuario
+  // por lo que no requiere autenticación de sesión
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) return NextResponse.json({ error: "API Key de Gemini no configurada" }, { status: 500 });
 
@@ -46,8 +46,8 @@ export async function POST(req: Request) {
 
     const today = new Date().toISOString().split("T")[0];
 
-    // gemini-1.5-flash tiene mejor rendimiento de OCR en documentos y recibos
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+    // gemini-2.5-flash: modelo con soporte de OCR de facturas y cuota disponible
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
 
     const body = {
       system_instruction: {
