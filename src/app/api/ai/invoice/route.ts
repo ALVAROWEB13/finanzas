@@ -76,6 +76,7 @@ Evalúa primero si la imagen tiene calidad suficiente para escanear (buena ilumi
    REGLAS CRÍTICAS PARA EL TOTAL:
    - Extrae el neto real pagado por el cliente. Busca y cruza el valor en múltiples lugares del recibo: la línea de "TOTAL A PAGAR", la línea del método de pago (ej. "TARJ CRE/DEB", "EFECTIVO" o "PAGO ELECTRONICO") y la suma de base + IVA en el desglose de impuestos.
    - REGLA DE VERIFICACIÓN ARITMÉTICA (CRÍTICA): Haz una suma mental rápida de los ítems individuales (restando los descuentos si los hay, como valores negativos) y contrástala con el total impreso. Esto te ayudará a resolver dígitos que parezcan borrosos o desgastados (por ejemplo, diferenciar si un número es un 5 o un 6, o si es un 3 o un 8) en impresoras térmicas.
+   - El total debe ser exactamente el valor final cobrado al cliente (ej: 116440 si dice 116.440). NUNCA inventes, aproximes o redondées de forma creativa. Asegúrate de verificar los dígitos con detenimiento.
    - NO te confundas con los subtotales, los impuestos (IVA por separado), el dinero entregado por el cliente antes del cambio, el cambio devuelto ("VUELTAS" / "CAMBIO"), ni con el ahorro acumulado ("AHORRO" / "SU AHORRO").
    - Ejemplo de decimales colombianos: "116.440,00" o "116,440" → 116440 | "1.250.000" → 1250000
    - Solo dígitos. Sin $, puntos de miles, comas ni letras. Si no es legible: 0.
@@ -86,7 +87,7 @@ Evalúa primero si la imagen tiene calidad suficiente para escanear (buena ilumi
    - NO extraigas fechas de vencimiento de promociones o puntos (ej. "Vence 20/03/2027").
    - Busca la fecha real de la compra que suele estar al final del ticket junto a la hora, número de caja y cajero (ej. "20/03/2024 16:32"), o en el encabezado como fecha de emisión.
    - Convierte fechas en español: "8 de junio de 2026" → "2026-06-08", "20/Mar/2024" → "2024-03-20".
-   - Si no hay fecha legible o es confusa, usa "HOY".
+   - Si no hay fecha de compra legible o es confusa, o si las únicas fechas visibles en el ticket corresponden a la resolución de la DIAN o al vencimiento de puntos/promociones, debes devolver estrictamente "HOY". NUNCA supongas una fecha de compra a partir de fechas DIAN o de puntos.
 
 5. categoria: Elige UNA de estas categorías según el tipo de comercio o concepto:
    - Alimentación (supermercados, restaurantes, D1, Éxito, Ara, Jumbo, Metro, Olímpica, domicilios)
@@ -106,6 +107,7 @@ Devuelve SOLO el JSON sin texto adicional ni bloques de código.`
         ]
       }],
       generationConfig: {
+        temperature: 0.0,
         responseMimeType: "application/json",
         responseSchema: {
           type: "object",
