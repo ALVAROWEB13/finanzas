@@ -26,7 +26,7 @@ export async function POST(req: Request) {
   // Esta ruta solo procesa imágenes con Gemini — no accede a datos de usuario
   // por lo que no requiere autenticación de sesión
   const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) return NextResponse.json({ error: "API Key de Gemini no configurada" }, { status: 500 });
+  if (!apiKey) return NextResponse.json({ error: "Servicio de procesamiento no disponible" }, { status: 500 });
 
   try {
     const formData = await req.formData();
@@ -122,14 +122,14 @@ Devuelve SOLO el JSON sin texto adicional ni bloques de código.`
     if (!geminiRes.ok) {
       const errText = await geminiRes.text();
       console.error("[invoice] Gemini error:", geminiRes.status, errText);
-      throw new Error(`Error del servidor AI: ${geminiRes.status}`);
+      throw new Error(`Error de procesamiento: ${geminiRes.status}`);
     }
 
     const resJson = await geminiRes.json();
     console.log("[invoice] Gemini response:", JSON.stringify(resJson).slice(0, 600));
 
     const part = resJson.candidates?.[0]?.content?.parts?.[0];
-    if (!part) throw new Error("Gemini no devolvió respuesta válida");
+    if (!part) throw new Error("No se pudo extraer una respuesta válida del escáner");
 
     let data: Record<string, unknown>;
     if (typeof part.text === "string") {

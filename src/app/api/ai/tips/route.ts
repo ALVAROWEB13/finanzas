@@ -31,7 +31,7 @@ export async function GET(req: Request) {
 
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
-    return NextResponse.json({ error: "API Key de Gemini no configurada en el servidor" }, { status: 500 });
+    return NextResponse.json({ error: "Servicio de análisis no disponible" }, { status: 500 });
   }
 
   try {
@@ -84,14 +84,14 @@ ${JSON.stringify(recentTx, null, 2)}`;
     if (!response.ok) {
       const errText = await response.text();
       console.error("[tips] Gemini error:", response.status, errText);
-      throw new Error(`Gemini respondió ${response.status}: ${errText}`);
+      throw new Error(`Error de procesamiento: ${response.status}`);
     }
 
     const resJson = await response.json();
     console.log("[tips] Gemini response:", JSON.stringify(resJson).slice(0, 400));
 
     const part = resJson.candidates?.[0]?.content?.parts?.[0];
-    if (!part) throw new Error("Gemini no devolvió candidatos en la respuesta");
+    if (!part) throw new Error("No se pudo extraer una respuesta válida del analizador");
 
     // With responseMimeType=application/json, Gemini puts a JSON string in part.text
     let tips: unknown[];

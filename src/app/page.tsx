@@ -1804,7 +1804,7 @@ export default function TobiramaFinancialOS() {
 
       // Si es muy oscura, advertir al usuario pero seguir intentando
       if (isDark) {
-        showToast("⚠️ Foto muy oscura: Asegúrate de tener buena luz para que la IA lea bien los datos.", "warning");
+        showToast("⚠️ Foto muy oscura: Asegúrate de tener buena luz para que el escáner lea bien los datos.", "warning");
       }
 
       // Validar tamaño antes de subir (límite de Vercel es 4.5MB)
@@ -1878,7 +1878,7 @@ export default function TobiramaFinancialOS() {
       const msg = err?.message || "Error desconocido";
       let userFriendlyMsg = msg;
       if (msg.includes("429") || msg.toLowerCase().includes("rate limit") || msg.toLowerCase().includes("too many requests")) {
-        userFriendlyMsg = "El servidor de IA está saturado por demasiados escaneos seguidos. Por favor, espera 10 segundos e intenta de nuevo.";
+        userFriendlyMsg = "El servicio de escaneo está temporalmente saturado. Por favor, espera 10 segundos e intenta de nuevo.";
       } else if (msg.includes("Load failed") || msg.includes("Failed to fetch") || msg.includes("body size limit") || msg.includes("413")) {
         userFriendlyMsg = "La foto es muy pesada o la conexión falló. Intenta recortar la foto, tomarla más de cerca con buena luz, o reducir la resolución de tu cámara.";
       }
@@ -2806,7 +2806,7 @@ export default function TobiramaFinancialOS() {
                             disabled={isLoadingTips}
                             className="text-[12px] text-blue-400 hover:text-blue-300 font-mono bg-transparent border-0 cursor-pointer transition-all hover:underline"
                           >
-                            {isLoadingTips ? "Analizando... 🤖" : "Refrescar AI 🤖"}
+                            {isLoadingTips ? "Analizando... 🤖" : "Refrescar Diagnóstico 🤖"}
                           </button>
                         </div>
 
@@ -2814,7 +2814,7 @@ export default function TobiramaFinancialOS() {
                         {isLoadingTips ? (
                           <div className="py-6 flex flex-col items-center justify-center gap-2">
                             <div className="h-4 w-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
-                            <span className="text-[12px] font-mono text-slate-500 uppercase tracking-widest">Analizando con Tobirama AI...</span>
+                            <span className="text-[12px] font-mono text-slate-500 uppercase tracking-widest">Analizando movimientos...</span>
                           </div>
                         ) : aiTips.length > 0 ? (
                           <div className="space-y-2.5 max-h-[220px] overflow-y-auto pr-1">
@@ -3313,7 +3313,7 @@ export default function TobiramaFinancialOS() {
                             <label className="border border-dashed border-white/[0.08] hover:border-blue-500/40 rounded-2xl p-6 flex flex-col items-center justify-center gap-2.5 transition-all bg-[#090a0c]/20 hover:bg-[#090a0c]/45 cursor-pointer">
                               <Upload className="h-6 w-6 text-slate-400" />
                               <span className="text-[13px] font-mono text-slate-200 font-semibold">Toca para fotografiar tu factura</span>
-                              <span className="text-[12px] text-slate-500 text-center">La IA leerá el monto, comercio y fecha automáticamente</span>
+                              <span className="text-[12px] text-slate-500 text-center">El escáner extraerá el monto, comercio y fecha automáticamente</span>
                               <input
                                 ref={invoiceInputRef}
                                 type="file"
@@ -3347,7 +3347,7 @@ export default function TobiramaFinancialOS() {
                                       {scanProgress < 20 
                                         ? "Comprimiendo" 
                                         : scanProgress < 55 
-                                          ? "Enviando a Gemini" 
+                                          ? "Cargando imagen" 
                                           : scanProgress < 85 
                                             ? "Extrayendo Datos" 
                                             : "Clasificando"}
@@ -3360,7 +3360,7 @@ export default function TobiramaFinancialOS() {
                                   {scanProgress < 20 
                                     ? "Reduciendo tamaño..." 
                                     : scanProgress < 55 
-                                      ? "Subiendo imagen al servidor de IA..." 
+                                      ? "Cargando y procesando imagen..." 
                                       : scanProgress < 85 
                                         ? "Analizando texto y recibo..." 
                                         : "Clasificando montos y categorías..."}
