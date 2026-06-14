@@ -1729,70 +1729,90 @@ export default function TobiramaFinancialOS() {
         img.src = objectUrl;
 
         img.onload = () => {
-          const canvas = document.createElement("canvas");
-          const ctx = canvas.getContext("2d");
-          if (!ctx) {
-            URL.revokeObjectURL(objectUrl);
-            resolve({ file: activeFile, isDark: false });
-            return;
-          }
-
-          // Para analizar el brillo basta con un tamaño pequeño (300px), ahorrando memoria
-          const MAX_WIDTH = 300;
-          const MAX_HEIGHT = 300;
-          let width = img.width;
-          let height = img.height;
-
-          if (width > height) {
-            if (width > MAX_WIDTH) {
-              height = Math.round((height * MAX_WIDTH) / width);
-              width = MAX_WIDTH;
-            }
-          } else {
-            if (height > MAX_HEIGHT) {
-              width = Math.round((width * MAX_HEIGHT) / height);
-              height = MAX_HEIGHT;
-            }
-          }
-
-          canvas.width = width;
-          canvas.height = height;
-          ctx.drawImage(img, 0, 0, width, height);
-
-          // Analizar brillo promedio
-          try {
-            const imgData = ctx.getImageData(0, 0, width, height);
-            const data = imgData.data;
-            let totalLuminance = 0;
-            const pixelCount = data.length / 4;
-            for (let i = 0; i < data.length; i += 4) {
-              const r = data[i];
-              const g = data[i + 1];
-              const b = data[i + 2];
-              const lum = 0.299 * r + 0.587 * g + 0.114 * b;
-              totalLuminance += lum;
-            }
-            const avgLuminance = totalLuminance / pixelCount;
-            isDark = avgLuminance < 50;
-          } catch (e) {
-            console.error("Error analizando brillo:", e);
-          }
-
-          // Si el compresor principal falló en el paso 2, usamos este canvas para comprimir
-          if (!compressionSuccess) {
-            canvas.toBlob((blob) => {
-              URL.revokeObjectURL(objectUrl);
-              if (blob) {
-                const compressedFile = new File([blob], activeFile.name.replace(/\.[^/.]+$/, "") + ".jpg", {
-                  type: "image/jpeg",
-                  lastModified: Date.now(),
-                });
-                console.log("[compress] Compressed via fallback manual canvas, size:", compressedFile.size);
-                resolve({ file: compressedFile, isDark });
-              } else {
-                resolve({ file: activeFile, isDark });
+          // Primero: Analizar brillo en un canvas pequeño (300px) para ser rápido y eficiente
+          const shadowCanvas = document.createElement("canvas");
+          const shadowCtx = shadowCanvas.getContext("2d");
+          if (shadowCtx) {
+            const ANALYZE_SIZE = 300;
+            let aW = img.width;
+            let aH = img.height;
+            if (aW > aH) {
+              if (aW > ANALYZE_SIZE) {
+                aH = Math.round((aH * ANALYZE_SIZE) / aW);
+                aW = ANALYZE_SIZE;
               }
-            }, "image/jpeg", 0.85);
+            } else {
+              if (aH > ANALYZE_SIZE) {
+                aW = Math.round((aW * ANALYZE_SIZE) / aH);
+                aH = ANALYZE_SIZE;
+              }
+            }
+            shadowCanvas.width = aW;
+            shadowCanvas.height = aH;
+            shadowCtx.drawImage(img, 0, 0, aW, aH);
+
+            try {
+              const imgData = shadowCtx.getImageData(0, 0, aW, aH);
+              const data = imgData.data;
+              let totalLuminance = 0;
+              const pixelCount = data.length / 4;
+              for (let i = 0; i < data.length; i += 4) {
+                const r = data[i];
+                const g = data[i + 1];
+                const b = data[i + 2];
+                const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+                totalLuminance += lum;
+              }
+              const avgLuminance = totalLuminance / pixelCount;
+              isDark = avgLuminance < 35; // Umbral de brillo corregido para evitar falsos positivos
+            } catch (e) {
+              console.error("Error analizando brillo:", e);
+            }
+          }
+
+          // Segundo: Si el compresor principal falló, creamos un canvas de alta resolución (1200px)
+          if (!compressionSuccess) {
+            const canvas = document.createElement("canvas");
+            const ctx = canvas.getContext("2d");
+            if (ctx) {
+              const MAX_WIDTH = 1200;
+              const MAX_HEIGHT = 1200;
+              let width = img.width;
+              let height = img.height;
+
+              if (width > height) {
+                if (width > MAX_WIDTH) {
+                  height = Math.round((height * MAX_WIDTH) / width);
+                  width = MAX_WIDTH;
+                }
+              } else {
+                if (height > MAX_HEIGHT) {
+                  width = Math.round((width * MAX_HEIGHT) / height);
+                  height = MAX_HEIGHT;
+                }
+              }
+
+              canvas.width = width;
+              canvas.height = height;
+              ctx.drawImage(img, 0, 0, width, height);
+
+              canvas.toBlob((blob) => {
+                URL.revokeObjectURL(objectUrl);
+                if (blob) {
+                  const compressedFile = new File([blob], activeFile.name.replace(/\.[^/.]+$/, "") + ".jpg", {
+                    type: "image/jpeg",
+                    lastModified: Date.now(),
+                  });
+                  console.log("[compress] Compressed via fallback manual 1200px canvas, size:", compressedFile.size);
+                  resolve({ file: compressedFile, isDark });
+                } else {
+                  resolve({ file: activeFile, isDark });
+                }
+              }, "image/jpeg", 0.85);
+            } else {
+              URL.revokeObjectURL(objectUrl);
+              resolve({ file: activeFile, isDark });
+            }
           } else {
             URL.revokeObjectURL(objectUrl);
             resolve({ file: activeFile, isDark });
