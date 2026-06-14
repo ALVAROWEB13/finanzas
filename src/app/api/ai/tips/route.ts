@@ -5,7 +5,7 @@ import { authenticateRequest } from "@/lib/auth";
 export const maxDuration = 60; // Incrementar el tiempo de ejecución en Vercel a 60 segundos (evita error 503)
 
 // Función auxiliar para reintentar peticiones a Gemini con retraso exponencial ante un HTTP 429 (ResourceExhausted)
-async function fetchWithRetry(url: string, options: RequestInit, retries = 3, delay = 1200): Promise<Response> {
+async function fetchWithRetry(url: string, options: RequestInit, retries = 4, delay = 2000): Promise<Response> {
   let lastResponse: Response | null = null;
   for (let i = 0; i < retries; i++) {
     const response = await fetch(url, options);

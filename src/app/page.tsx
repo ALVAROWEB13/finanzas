@@ -1877,11 +1877,25 @@ export default function TobiramaFinancialOS() {
       setScanProgress(0);
       const msg = err?.message || "Error desconocido";
       let userFriendlyMsg = msg;
-      if (msg.includes("Load failed") || msg.includes("Failed to fetch") || msg.includes("body size limit") || msg.includes("413")) {
+      if (msg.includes("429") || msg.toLowerCase().includes("rate limit") || msg.toLowerCase().includes("too many requests")) {
+        userFriendlyMsg = "El servidor de IA está saturado por demasiados escaneos seguidos. Por favor, espera 10 segundos e intenta de nuevo.";
+      } else if (msg.includes("Load failed") || msg.includes("Failed to fetch") || msg.includes("body size limit") || msg.includes("413")) {
         userFriendlyMsg = "La foto es muy pesada o la conexión falló. Intenta recortar la foto, tomarla más de cerca con buena luz, o reducir la resolución de tu cámara.";
       }
       showToast(`⚠️ Error al escanear: ${userFriendlyMsg}`, "warning");
       console.error("[OCR]", err);
+
+      // Revocar y limpiar la preview local para restablecer la zona de carga y que no se bloquee la UI
+      if (localUrl) {
+        try {
+          URL.revokeObjectURL(localUrl);
+        } catch (e) {
+          console.error("Error al revocar ObjectURL:", e);
+        }
+      }
+      setInvoicePreviewUrl(null);
+      setScanSuccess(false);
+      setScanResult(null);
     } finally {
       clearInterval(progressInterval);
       setIsScanning(false);
