@@ -442,25 +442,30 @@ export default function TobiramaFinancialOS() {
   // --- COMPUTE CATEGORIES LIST ---
   const CATEGORIES = useMemo(() => {
     const cats = new Set(DEFAULT_CATEGORIES);
-    budgetItems.forEach((item) => cats.add(item.category));
-    credits.forEach((c) => cats.add(c.category));
+    budgetItems.forEach((item) => {
+      if (item.category) cats.add(item.category);
+    });
+    credits.forEach((c) => {
+      if (c.category) cats.add(c.category);
+    });
     transactions.forEach((tx) => {
       if (tx.category && tx.category !== "Ingresos") {
         cats.add(tx.category);
       }
     });
-    return Array.from(cats);
+    return Array.from(cats).filter(Boolean);
   }, [budgetItems, credits, transactions]);
 
   const categoriesForSelection = useMemo(() => {
     if (quickType === "Ingreso") {
       const incomeCats = CATEGORIES.filter(
         (c) =>
-          c === "Ingresos" ||
-          c.toLowerCase().includes("ingreso") ||
-          c.toLowerCase().includes("sueldo") ||
-          c.toLowerCase().includes("freelance") ||
-          c.toLowerCase().includes("rendimiento")
+          c &&
+          (c === "Ingresos" ||
+            c.toLowerCase().includes("ingreso") ||
+            c.toLowerCase().includes("sueldo") ||
+            c.toLowerCase().includes("freelance") ||
+            c.toLowerCase().includes("rendimiento"))
       );
       if (!incomeCats.includes("Ingresos")) {
         incomeCats.unshift("Ingresos");
@@ -469,11 +474,12 @@ export default function TobiramaFinancialOS() {
     } else if (quickType === "Movimiento a Reserva") {
       const reserveCats = CATEGORIES.filter(
         (c) =>
-          c === "Ahorro / Reserva" ||
-          c.toLowerCase().includes("ahorro") ||
-          c.toLowerCase().includes("reserva") ||
-          c.toLowerCase().includes("fondo") ||
-          c.toLowerCase().includes("colchón")
+          c &&
+          (c === "Ahorro / Reserva" ||
+            c.toLowerCase().includes("ahorro") ||
+            c.toLowerCase().includes("reserva") ||
+            c.toLowerCase().includes("fondo") ||
+            c.toLowerCase().includes("colchón"))
       );
       if (!reserveCats.includes("Ahorro / Reserva")) {
         reserveCats.unshift("Ahorro / Reserva");
@@ -482,6 +488,7 @@ export default function TobiramaFinancialOS() {
     } else {
       const expenseCats = CATEGORIES.filter(
         (c) =>
+          c &&
           c !== "Ingresos" &&
           c !== "Ahorro / Reserva" &&
           !c.toLowerCase().includes("ahorro / reserva")
@@ -677,7 +684,7 @@ export default function TobiramaFinancialOS() {
   // Real Patrimonio Neto: Caja Libre + Ahorros Nu/Lulo
   const netWorthTotal = useMemo(() => {
     const savingsAmount = transactions
-      .filter((t) => t.type === "Movimiento a Reserva" || t.category.toLowerCase().includes("ahorro"))
+      .filter((t) => t.type === "Movimiento a Reserva" || (t.category && t.category.toLowerCase().includes("ahorro")))
       .reduce((sum, t) => sum + t.amount, 0);
     return pocketLiquidity + savingsAmount;
   }, [pocketLiquidity, transactions]);
@@ -978,7 +985,7 @@ export default function TobiramaFinancialOS() {
     const catName = newCategoryName.trim();
     if (!catName) return;
 
-    if (budgetItems.some((item) => item.category.toLowerCase() === catName.toLowerCase())) {
+    if (budgetItems.some((item) => item.category && item.category.toLowerCase() === catName.toLowerCase())) {
       showToast("Esta categoría ya existe.", "warning");
       return;
     }
@@ -1649,7 +1656,7 @@ export default function TobiramaFinancialOS() {
             const converted = await (window as any).heic2any({
               blob: file,
               toType: "image/jpeg",
-              quality: 0.70
+              quality: 0.85
             });
             const convertedBlob = Array.isArray(converted) ? converted[0] : converted;
             activeFile = new File([convertedBlob], file.name.replace(/\.[^/.]+$/, "") + ".jpg", {
@@ -1671,10 +1678,10 @@ export default function TobiramaFinancialOS() {
         }
         if ((window as any).imageCompression) {
           const options = {
-            maxSizeMB: 0.15, // Objetivo: 150KB para evitar cualquier error de payload
-            maxWidthOrHeight: 800,
+            maxSizeMB: 0.6, // Mayor límite para conservar detalles
+            maxWidthOrHeight: 1200, // Mayor resolución para texto pequeño
             useWebWorker: true,
-            initialQuality: 0.70
+            initialQuality: 0.85
           };
           const compressedBlob = await (window as any).imageCompression(activeFile, options);
           activeFile = new File([compressedBlob], activeFile.name.replace(/\.[^/.]+$/, "") + ".jpg", {
@@ -1758,7 +1765,7 @@ export default function TobiramaFinancialOS() {
               } else {
                 resolve({ file: activeFile, isDark });
               }
-            }, "image/jpeg", 0.70);
+            }, "image/jpeg", 0.85);
           } else {
             URL.revokeObjectURL(objectUrl);
             resolve({ file: activeFile, isDark });
@@ -1867,7 +1874,14 @@ export default function TobiramaFinancialOS() {
       }
 
       setQuickType("Gasto Extra");
-      if (data.fecha) setQuickDate(data.fecha);
+      if (data.fecha) {
+        setQuickDate(data.fecha);
+        // Sincronizar selectedMonth con la fecha de la factura para que aparezca de inmediato en la UI
+        if (/^\d{4}-\d{2}-\d{2}$/.test(data.fecha)) {
+          const yearMonth = data.fecha.substring(0, 7); // "YYYY-MM"
+          setSelectedMonth(yearMonth);
+        }
+      }
       setScanSuccess(true);
 
       const qualityNote = data.calidad_imagen === "REGULAR" ? " · verifica los datos" : "";
