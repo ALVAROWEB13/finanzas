@@ -77,7 +77,7 @@ Evalúa primero si la imagen tiene calidad suficiente para escanear (buena ilumi
 
 4. fecha: Fecha de la transacción en formato YYYY-MM-DD.
    Convierte fechas en español: "8 de junio de 2026" → "2026-06-08", "08/Jun/2026" → "2026-06-08"
-   Si no hay fecha legible: "${today}"
+   Si no hay fecha legible: "HOY"
 
 5. categoria: Elige UNA de estas categorías según el tipo de comercio o concepto:
    - Alimentación (supermercados, restaurantes, D1, Éxito, Ara, Jumbo, domicilios)

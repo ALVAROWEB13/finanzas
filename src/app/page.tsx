@@ -381,6 +381,7 @@ export default function TobiramaFinancialOS() {
   ]);
 
   const terminalEndRef = useRef<HTMLDivElement>(null);
+  const lastSaveTimeRef = useRef<number>(0);
 
   useEffect(() => {
     if (terminalEndRef.current) {
@@ -390,6 +391,10 @@ export default function TobiramaFinancialOS() {
 
   // Real-time API synchronization helpers
   const fetchFromServer = async () => {
+    // Evitar machacar cambios locales optimistas durante procesos de guardado asíncronos
+    if (Date.now() - lastSaveTimeRef.current < 3500) {
+      return;
+    }
     try {
       const headers = getAuthHeader();
       const [txRes, budgetRes, creditsRes] = await Promise.all([
@@ -1037,13 +1042,22 @@ export default function TobiramaFinancialOS() {
     const amountVal = parseFormattedCOP(quickAmount) || 0;
     if (amountVal <= 0) return;
 
+    // Registrar el tiempo para evitar race-condition con el polling del servidor
+    lastSaveTimeRef.current = Date.now();
+
     const finalCategory = quickCategory === "Otra..." ? (customCategory.trim() || "Otros") : quickCategory;
     const desc = quickDescription.trim() || `Transacción flash: ${finalCategory}`;
+    const txDate = quickDate || new Date().toISOString().split("T")[0];
+
+    // Sincronizar el mes seleccionado de la UI para que la transacción recién guardada sea visible de inmediato
+    if (/^\d{4}-\d{2}/.test(txDate)) {
+      setSelectedMonth(txDate.substring(0, 7));
+    }
 
     // Add transaction to central state
     const newTx: Transaction = {
       id: `t-${Date.now()}`,
-      date: quickDate || new Date().toISOString().split("T")[0],
+      date: txDate,
       description: desc,
       type: quickType,
       paymentMethod: quickMethod,
@@ -1091,6 +1105,12 @@ export default function TobiramaFinancialOS() {
     if (quickCategory === "Otra...") {
       setQuickCategory("Vivienda"); // reset
     }
+
+    // Limpiar estados del escáner al registrar la factura
+    setInvoicePreviewUrl(null);
+    setScanSuccess(false);
+    setScanResult(null);
+    if (invoiceInputRef.current) invoiceInputRef.current.value = "";
 
     // Show high-visibility success feedback instantly
     showToast(`Transacción de ${formatCOP(amountVal)} registrada con éxito.`, "success");
@@ -1875,10 +1895,15 @@ export default function TobiramaFinancialOS() {
 
       setQuickType("Gasto Extra");
       if (data.fecha) {
-        setQuickDate(data.fecha);
+        let dateVal = data.fecha;
+        if (dateVal === "HOY") {
+          const d = new Date();
+          dateVal = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+        }
+        setQuickDate(dateVal);
         // Sincronizar selectedMonth con la fecha de la factura para que aparezca de inmediato en la UI
-        if (/^\d{4}-\d{2}-\d{2}$/.test(data.fecha)) {
-          const yearMonth = data.fecha.substring(0, 7); // "YYYY-MM"
+        if (/^\d{4}-\d{2}-\d{2}$/.test(dateVal)) {
+          const yearMonth = dateVal.substring(0, 7); // "YYYY-MM"
           setSelectedMonth(yearMonth);
         }
       }
@@ -3616,6 +3641,11 @@ export default function TobiramaFinancialOS() {
                         onClick={() => {
                           setQuickAmount("0,00");
                           setQuickDescription("");
+                          setCustomCategory("");
+                          setInvoicePreviewUrl(null);
+                          setScanSuccess(false);
+                          setScanResult(null);
+                          if (invoiceInputRef.current) invoiceInputRef.current.value = "";
                         }}
                         className="text-center font-mono text-[12px] text-slate-600 hover:text-slate-400 block w-full uppercase tracking-wider cursor-pointer"
                       >
