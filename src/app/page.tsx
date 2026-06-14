@@ -340,7 +340,10 @@ export default function TobiramaFinancialOS() {
   const [quickMethod, setQuickMethod] = useState<PaymentMethod>("Débito");
   const [quickType, setQuickType] = useState<TransactionType>("Gasto Extra");
   const [quickDescription, setQuickDescription] = useState("");
-  const [quickDate, setQuickDate] = useState(() => new Date().toISOString().split("T")[0]);
+  const [quickDate, setQuickDate] = useState(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  });
   const [quickIsFixed, setQuickIsFixed] = useState(false);
   const [selectedMonth, setSelectedMonth] = useState(() => {
     const now = new Date();
@@ -1111,6 +1114,10 @@ export default function TobiramaFinancialOS() {
     setScanSuccess(false);
     setScanResult(null);
     if (invoiceInputRef.current) invoiceInputRef.current.value = "";
+
+    // Restablecer la fecha al día de hoy local
+    const d = new Date();
+    setQuickDate(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`);
 
     // Show high-visibility success feedback instantly
     showToast(`Transacción de ${formatCOP(amountVal)} registrada con éxito.`, "success");
@@ -2419,7 +2426,7 @@ export default function TobiramaFinancialOS() {
             {/* Botón de menú hamburguesa para mobile */}
             <button
               onClick={() => setIsSidebarOpen(true)}
-              className="p-1 rounded-lg bg-white/5 border border-white/[0.08] text-slate-400 hover:text-white md:hidden transition-all cursor-pointer"
+              className="hidden"
             >
               <Menu className="h-5 w-5" />
             </button>
@@ -2478,8 +2485,8 @@ export default function TobiramaFinancialOS() {
         </header>
 
         {/* --- MONTH SELECTOR BAR --- */}
-        <div className="bg-[#050505] border-b border-white/[0.03] px-6 py-3 md:px-8 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-2">
+        <div className="bg-[#050505] border-b border-white/[0.03] px-6 py-3 md:px-8 flex items-center justify-between sm:justify-between gap-4">
+          <div className="hidden sm:flex items-center gap-2">
             <span className="h-2 w-2 rounded-full bg-blue-500 animate-pulse" />
             <span className="text-[12px] font-bold font-mono tracking-widest text-slate-500 uppercase">Periodo de Análisis</span>
           </div>
@@ -4352,9 +4359,9 @@ export default function TobiramaFinancialOS() {
         </AnimatePresence>
       </div>
 
-      {/* Bottom Navigation for Mobile */}
-      <div className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-[#050505]/98 backdrop-blur-xl border-t border-white/[0.05] px-2 py-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))]">
-        <div className="flex justify-around items-center">
+      {/* Floating Bottom Navigation for Mobile */}
+      <div className="md:hidden fixed bottom-5 left-4 right-4 z-40 bg-black/80 backdrop-blur-xl border border-white/[0.08] px-2 py-1 rounded-2xl shadow-[0_10px_30px_rgba(0,0,0,0.6)]">
+        <div className="flex justify-around items-center h-16 relative">
           {[
             { id: "dashboard", label: "Dashboard", icon: Layers },
             { id: "tracker", label: "Movimientos", icon: Coins },
@@ -4366,16 +4373,20 @@ export default function TobiramaFinancialOS() {
               <button
                 key={item.id}
                 onClick={() => setActiveView(item.id as "dashboard" | "tracker" | "audit")}
-                className="flex flex-col items-center gap-1 py-1.5 px-4 transition-all cursor-pointer bg-transparent border-0 min-h-[52px] justify-center"
+                className="flex-1 flex flex-col items-center gap-0.5 py-1.5 transition-all cursor-pointer bg-transparent border-0 justify-center relative active:scale-95"
               >
-                <div className={`p-2 rounded-xl transition-all ${isActive ? 'bg-white/[0.07] text-white border border-white/[0.1]' : 'text-slate-500'}`}>
-                  <Icon className="h-5 w-5" />
+                <div className={`p-1.5 rounded-xl transition-all duration-300 ${isActive ? 'text-white' : 'text-slate-500'}`}>
+                  <Icon className={`h-5 w-5 transition-transform duration-300 ${isActive ? 'scale-110' : ''}`} />
                 </div>
-                <span className={`text-[11px] font-medium tracking-wide transition-colors ${isActive ? 'text-white' : 'text-slate-600'}`}>
+                <span className={`text-[10px] font-bold font-mono tracking-wide transition-colors duration-300 ${isActive ? 'text-white' : 'text-slate-600'}`}>
                   {item.label}
                 </span>
                 {isActive && (
-                  <div className="h-0.5 w-4 rounded-full bg-white/50 mt-0.5" />
+                  <motion.div
+                    layoutId="mobileNavActiveDot"
+                    className="absolute bottom-0 h-1 w-1 rounded-full bg-white/80"
+                    transition={{ type: "spring", stiffness: 300, damping: 30 }}
+                  />
                 )}
               </button>
             );
