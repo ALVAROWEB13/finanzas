@@ -1617,22 +1617,29 @@ export default function TobiramaFinancialOS() {
   const compressAndAnalyzeImage = (file: File): Promise<{ file: File; isDark: boolean }> => {
     return new Promise(async (resolve) => {
       let activeFile = file;
+      let isDark = false;
 
-      // 1. Si es HEIC/HEIF, intentar convertirlo en el cliente usando heic2any desde CDN
+      // Helper para cargar scripts dinámicamente desde CDN
+      const loadScript = (src: string): Promise<void> => {
+        return new Promise((res, rej) => {
+          if (document.querySelector(`script[src="${src}"]`)) {
+            res();
+            return;
+          }
+          const script = document.createElement("script");
+          script.src = src;
+          script.onload = () => res();
+          script.onerror = () => rej(new Error("Failed to load script: " + src));
+          document.head.appendChild(script);
+        });
+      };
+
+      // 1. Convertir HEIC/HEIF usando heic2any si es necesario
       if (file.name.toLowerCase().endsWith(".heic") || file.name.toLowerCase().endsWith(".heif")) {
         try {
-          // Cargar heic2any dinámicamente si no está ya cargado en el objeto window
           if (!(window as any).heic2any) {
-            const script = document.createElement("script");
-            script.src = "https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js";
-            const scriptLoaded = new Promise((res, rej) => {
-              script.onload = res;
-              script.onerror = rej;
-            });
-            document.head.appendChild(script);
-            await scriptLoaded;
+            await loadScript("https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js");
           }
-
           if ((window as any).heic2any) {
             const converted = await (window as any).heic2any({
               blob: file,
@@ -1644,88 +1651,125 @@ export default function TobiramaFinancialOS() {
               type: "image/jpeg",
               lastModified: Date.now()
             });
+            console.log("[compress] HEIC converted successfully via heic2any, size:", activeFile.size);
           }
         } catch (heicErr) {
-          console.error("Error al convertir HEIC con heic2any:", heicErr);
+          console.error("Error converting HEIC with heic2any:", heicErr);
         }
       }
 
-      // 2. Comprimir usando Canvas a un tamaño muy compacto (máx 800px, 70% calidad)
-      const img = new Image();
-      const objectUrl = URL.createObjectURL(activeFile);
-      img.src = objectUrl;
-
-      img.onload = () => {
-        const canvas = document.createElement("canvas");
-        const ctx = canvas.getContext("2d");
-        if (!ctx) {
-          URL.revokeObjectURL(objectUrl);
-          resolve({ file: activeFile, isDark: false });
-          return;
+      // 2. Comprimir usando browser-image-compression (método primario ultra-robusto y seguro en memoria)
+      let compressionSuccess = false;
+      try {
+        if (!(window as any).imageCompression) {
+          await loadScript("https://cdn.jsdelivr.net/npm/browser-image-compression@2.0.2/dist/browser-image-compression.js");
         }
-
-        // Redimensionar a máx 800px para garantizar tamaño mínimo y velocidad de red
-        const MAX_WIDTH = 800;
-        const MAX_HEIGHT = 800;
-        let width = img.width;
-        let height = img.height;
-
-        if (width > height) {
-          if (width > MAX_WIDTH) {
-            height = Math.round((height * MAX_WIDTH) / width);
-            width = MAX_WIDTH;
-          }
-        } else {
-          if (height > MAX_HEIGHT) {
-            width = Math.round((width * MAX_HEIGHT) / height);
-            height = MAX_HEIGHT;
-          }
+        if ((window as any).imageCompression) {
+          const options = {
+            maxSizeMB: 0.15, // Objetivo: 150KB para evitar cualquier error de payload
+            maxWidthOrHeight: 800,
+            useWebWorker: true,
+            initialQuality: 0.70
+          };
+          const compressedBlob = await (window as any).imageCompression(activeFile, options);
+          activeFile = new File([compressedBlob], activeFile.name.replace(/\.[^/.]+$/, "") + ".jpg", {
+            type: "image/jpeg",
+            lastModified: Date.now()
+          });
+          compressionSuccess = true;
+          console.log("[compress] Compressed successfully via browser-image-compression, size:", activeFile.size);
         }
+      } catch (err) {
+        console.error("Error compressing via browser-image-compression:", err);
+      }
 
-        canvas.width = width;
-        canvas.height = height;
-        ctx.drawImage(img, 0, 0, width, height);
+      // 3. Fallback a Canvas manual para luminosidad y como compresión alternativa
+      try {
+        const img = new Image();
+        const objectUrl = URL.createObjectURL(activeFile);
+        img.src = objectUrl;
 
-        // Analizar luminosidad
-        let isDark = false;
-        try {
-          const imgData = ctx.getImageData(0, 0, width, height);
-          const data = imgData.data;
-          let totalLuminance = 0;
-          const pixelCount = data.length / 4;
-          for (let i = 0; i < data.length; i += 4) {
-            const r = data[i];
-            const g = data[i + 1];
-            const b = data[i + 2];
-            const lum = 0.299 * r + 0.587 * g + 0.114 * b;
-            totalLuminance += lum;
+        img.onload = () => {
+          const canvas = document.createElement("canvas");
+          const ctx = canvas.getContext("2d");
+          if (!ctx) {
+            URL.revokeObjectURL(objectUrl);
+            resolve({ file: activeFile, isDark: false });
+            return;
           }
-          const avgLuminance = totalLuminance / pixelCount;
-          isDark = avgLuminance < 50;
-        } catch (e) {
-          console.error("Error de canvas en luminosidad:", e);
-        }
 
-        // Calidad 70% para obtener un archivo súper liviano (aprox 50KB-80KB)
-        canvas.toBlob((blob) => {
-          URL.revokeObjectURL(objectUrl);
-          if (blob) {
-            const compressedFile = new File([blob], activeFile.name.replace(/\.[^/.]+$/, "") + ".jpg", {
-              type: "image/jpeg",
-              lastModified: Date.now(),
-            });
-            resolve({ file: compressedFile, isDark });
+          // Para analizar el brillo basta con un tamaño pequeño (300px), ahorrando memoria
+          const MAX_WIDTH = 300;
+          const MAX_HEIGHT = 300;
+          let width = img.width;
+          let height = img.height;
+
+          if (width > height) {
+            if (width > MAX_WIDTH) {
+              height = Math.round((height * MAX_WIDTH) / width);
+              width = MAX_WIDTH;
+            }
           } else {
+            if (height > MAX_HEIGHT) {
+              width = Math.round((width * MAX_HEIGHT) / height);
+              height = MAX_HEIGHT;
+            }
+          }
+
+          canvas.width = width;
+          canvas.height = height;
+          ctx.drawImage(img, 0, 0, width, height);
+
+          // Analizar brillo promedio
+          try {
+            const imgData = ctx.getImageData(0, 0, width, height);
+            const data = imgData.data;
+            let totalLuminance = 0;
+            const pixelCount = data.length / 4;
+            for (let i = 0; i < data.length; i += 4) {
+              const r = data[i];
+              const g = data[i + 1];
+              const b = data[i + 2];
+              const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+              totalLuminance += lum;
+            }
+            const avgLuminance = totalLuminance / pixelCount;
+            isDark = avgLuminance < 50;
+          } catch (e) {
+            console.error("Error analizando brillo:", e);
+          }
+
+          // Si el compresor principal falló en el paso 2, usamos este canvas para comprimir
+          if (!compressionSuccess) {
+            canvas.toBlob((blob) => {
+              URL.revokeObjectURL(objectUrl);
+              if (blob) {
+                const compressedFile = new File([blob], activeFile.name.replace(/\.[^/.]+$/, "") + ".jpg", {
+                  type: "image/jpeg",
+                  lastModified: Date.now(),
+                });
+                console.log("[compress] Compressed via fallback manual canvas, size:", compressedFile.size);
+                resolve({ file: compressedFile, isDark });
+              } else {
+                resolve({ file: activeFile, isDark });
+              }
+            }, "image/jpeg", 0.70);
+          } else {
+            URL.revokeObjectURL(objectUrl);
             resolve({ file: activeFile, isDark });
           }
-        }, "image/jpeg", 0.70);
-      };
+        };
 
-      img.onerror = () => {
-        URL.revokeObjectURL(objectUrl);
-        console.error("Error al cargar imagen en canvas");
+        img.onerror = () => {
+          URL.revokeObjectURL(objectUrl);
+          console.error("Error al cargar imagen en Image object para brillo");
+          resolve({ file: activeFile, isDark: false });
+        };
+
+      } catch (err) {
+        console.error("Error general en el canvas de brillo:", err);
         resolve({ file: activeFile, isDark: false });
-      };
+      }
     });
   };
 
