@@ -47,8 +47,8 @@ export async function POST(req: Request) {
 
     const today = new Date().toISOString().split("T")[0];
 
-    // gemini-2.5-flash: modelo con soporte de OCR de facturas y cuota disponible
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+    // Modelos candidatos en orden de prioridad para evadir límites de cuota (429) de forma transparente
+    const models = ["gemini-2.5-flash", "gemini-3.5-flash", "gemini-2.5-flash-lite", "gemini-3.1-flash-lite"];
 
     const body = {
       system_instruction: {
@@ -113,16 +113,37 @@ Devuelve SOLO el JSON sin texto adicional ni bloques de código.`
       }
     };
 
-    const geminiRes = await fetchWithRetry(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body)
-    });
+    let geminiRes: Response | null = null;
+    let lastErrorMsg = "";
 
-    if (!geminiRes.ok) {
-      const errText = await geminiRes.text();
-      console.error("[invoice] Gemini error:", geminiRes.status, errText);
-      throw new Error(`Error de procesamiento: ${geminiRes.status}`);
+    for (const model of models) {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+      console.log(`[invoice] Intentando procesar factura con el modelo: ${model}`);
+      try {
+        geminiRes = await fetchWithRetry(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body)
+        }, 2, 1000); // 2 reintentos rápidos (espera máx ~1s) antes de saltar al fallback
+
+        if (geminiRes.ok) {
+          console.log(`[invoice] Procesamiento exitoso con el modelo: ${model}`);
+          break;
+        } else {
+          const status = geminiRes.status;
+          const errText = await geminiRes.text();
+          lastErrorMsg = `Modelo ${model} falló con estado ${status}: ${errText}`;
+          console.warn(`[invoice] ${lastErrorMsg}. Probando siguiente modelo si está disponible...`);
+        }
+      } catch (err: any) {
+        lastErrorMsg = `Error llamando a ${model}: ${err.message}`;
+        console.warn(`[invoice] ${lastErrorMsg}. Probando siguiente modelo...`);
+      }
+    }
+
+    if (!geminiRes || !geminiRes.ok) {
+      const finalStatus = geminiRes ? geminiRes.status : 500;
+      throw new Error(`Error de procesamiento: ${finalStatus}`);
     }
 
     const resJson = await geminiRes.json();

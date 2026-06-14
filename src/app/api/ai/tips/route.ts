@@ -47,7 +47,7 @@ export async function GET(req: Request) {
       tipo: t.type
     }));
 
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+    const models = ["gemini-2.5-flash", "gemini-3.5-flash", "gemini-2.5-flash-lite", "gemini-3.1-flash-lite"];
 
     const prompt = `Eres "Tobirama AI", un coach de finanzas personales para colombianos.
 Analiza las siguientes transacciones recientes y genera exactamente 3 tips financieros personalizados en español.
@@ -57,34 +57,54 @@ Cada tip tiene: titulo (corto, max 30 chars), consejo (específico y útil, máx
 Transacciones del usuario:
 ${JSON.stringify(recentTx, null, 2)}`;
 
-    // Realizar llamada con reintentos para mitigar errores 429
-    const response = await fetchWithRetry(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: "array",
-            items: {
-              type: "object",
-              properties: {
-                titulo:   { type: "string" },
-                consejo:  { type: "string" },
-                gravedad: { type: "string", enum: ["INFO", "WARNING", "SUCCESS"] }
-              },
-              required: ["titulo", "consejo", "gravedad"]
-            }
-          }
-        }
-      })
-    });
+    let response: Response | null = null;
+    let lastErrorMsg = "";
 
-    if (!response.ok) {
-      const errText = await response.text();
-      console.error("[tips] Gemini error:", response.status, errText);
-      throw new Error(`Error de procesamiento: ${response.status}`);
+    for (const model of models) {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+      console.log(`[tips] Intentando generar tips con el modelo: ${model}`);
+      try {
+        response = await fetchWithRetry(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: prompt }] }],
+            generationConfig: {
+              responseMimeType: "application/json",
+              responseSchema: {
+                type: "array",
+                items: {
+                  type: "object",
+                  properties: {
+                    titulo:   { type: "string" },
+                    consejo:  { type: "string" },
+                    gravedad: { type: "string", enum: ["INFO", "WARNING", "SUCCESS"] }
+                  },
+                  required: ["titulo", "consejo", "gravedad"]
+                }
+              }
+            }
+          })
+        }, 2, 1000); // 2 reintentos rápidos (espera máx ~1s) antes de saltar al fallback
+
+        if (response.ok) {
+          console.log(`[tips] Generación de tips exitosa con el modelo: ${model}`);
+          break;
+        } else {
+          const status = response.status;
+          const errText = await response.text();
+          lastErrorMsg = `Modelo ${model} falló con estado ${status}: ${errText}`;
+          console.warn(`[tips] ${lastErrorMsg}. Probando siguiente modelo si está disponible...`);
+        }
+      } catch (err: any) {
+        lastErrorMsg = `Error llamando a ${model}: ${err.message}`;
+        console.warn(`[tips] ${lastErrorMsg}. Probando siguiente modelo...`);
+      }
+    }
+
+    if (!response || !response.ok) {
+      const finalStatus = response ? response.status : 500;
+      throw new Error(`Error de procesamiento: ${finalStatus}`);
     }
 
     const resJson = await response.json();
