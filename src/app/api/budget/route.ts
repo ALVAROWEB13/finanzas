@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { initDb, getBudgetItems, updateBudgetItem, deleteBudgetItem } from "@/lib/db";
+import { initDb, getBudgetItems, updateBudgetItem, deleteBudgetItem, logError } from "@/lib/db";
 import { authenticateRequest } from "@/lib/auth";
 
 // API handler for GET, POST, and DELETE budget items
@@ -13,6 +13,7 @@ export async function GET(req: Request) {
     return NextResponse.json(budgetItems);
   } catch (err: any) {
     console.error("API GET Budget failed:", err);
+    try { await logError(auth.userId, err.message, err.stack, "API_BUDGET_GET"); } catch(e){}
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }
@@ -32,6 +33,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ success: true });
   } catch (err: any) {
     console.error("API POST Budget failed:", err);
+    try { await logError(auth.userId, err.message, err.stack, "API_BUDGET_POST"); } catch(e){}
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }
@@ -51,6 +53,7 @@ export async function DELETE(req: Request) {
     return NextResponse.json({ success: true });
   } catch (err: any) {
     console.error("API DELETE Budget failed:", err);
+    try { await logError(auth.userId, err.message, err.stack, "API_BUDGET_DELETE"); } catch(e){}
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }

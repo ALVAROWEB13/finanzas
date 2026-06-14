@@ -162,6 +162,17 @@ export const initDb = async () => {
         );
       `);
 
+      await pgPool.query(`
+        CREATE TABLE IF NOT EXISTS error_logs (
+          id VARCHAR(100) PRIMARY KEY,
+          timestamp TIMESTAMP DEFAULT NOW(),
+          user_id VARCHAR(100) DEFAULT 'default',
+          error_message TEXT NOT NULL,
+          error_stack TEXT,
+          context VARCHAR(255)
+        );
+      `);
+
       // Ensure columns exist on older tables
       await pgPool.query("ALTER TABLE budget_items ADD COLUMN IF NOT EXISTS is_fixed BOOLEAN DEFAULT false");
       await pgPool.query("ALTER TABLE transactions ADD COLUMN IF NOT EXISTS is_fixed BOOLEAN DEFAULT false");
@@ -221,7 +232,7 @@ export const initDb = async () => {
     if (!fs.existsSync(dbJsonPath)) {
       fs.writeFileSync(
         dbJsonPath,
-        JSON.stringify({ budgetItems: initialBudgetItems, transactions: initialTransactions, credits: [], users: [] }, null, 2)
+        JSON.stringify({ budgetItems: initialBudgetItems, transactions: initialTransactions, credits: [], users: [], errorLogs: [] }, null, 2)
       );
     }
   }
@@ -230,7 +241,7 @@ export const initDb = async () => {
 // --- JSON FALLBACK HELPERS ---
 const readJson = () => {
   if (!fs.existsSync(dbJsonPath)) {
-    return { budgetItems: initialBudgetItems, transactions: initialTransactions, credits: [], users: [] };
+    return { budgetItems: initialBudgetItems, transactions: initialTransactions, credits: [], users: [], errorLogs: [] };
   }
   try {
     const data = JSON.parse(fs.readFileSync(dbJsonPath, "utf-8"));
@@ -239,9 +250,10 @@ const readJson = () => {
       transactions: data.transactions || [],
       credits: data.credits || [],
       users: data.users || [],
+      errorLogs: data.errorLogs || [],
     };
   } catch {
-    return { budgetItems: initialBudgetItems, transactions: initialTransactions, credits: [], users: [] };
+    return { budgetItems: initialBudgetItems, transactions: initialTransactions, credits: [], users: [], errorLogs: [] };
   }
 };
 
@@ -250,6 +262,7 @@ const writeJson = (data: {
   transactions: Transaction[];
   credits?: Credit[];
   users?: AppUser[];
+  errorLogs?: ErrorLog[];
 }) => {
   try {
     fs.writeFileSync(dbJsonPath, JSON.stringify(data, null, 2));
@@ -725,6 +738,96 @@ export const deleteCredit = async (id: string, userId: string): Promise<void> =>
     data.credits = data.credits.filter(
       (c: Credit) => !(c.id === id && (c.userId || "default") === userId)
     );
+    writeJson(data);
+  }
+};
+
+// --- ERROR LOGGING FOR ADMIN ---
+export interface ErrorLog {
+  id: string;
+  timestamp: string;
+  userId: string;
+  errorMessage: string;
+  errorStack?: string;
+  context?: string;
+}
+
+export const logError = async (
+  userId: string,
+  errorMessage: string,
+  errorStack?: string,
+  context?: string
+): Promise<void> => {
+  const id = `log-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+  const pgPool = getPool();
+  if (pgPool) {
+    try {
+      await pgPool.query(
+        "INSERT INTO error_logs (id, user_id, error_message, error_stack, context) VALUES ($1, $2, $3, $4, $5)",
+        [id, userId, errorMessage, errorStack || "", context || ""]
+      );
+      console.log(`[logError] Error logged successfully: ${errorMessage}`);
+    } catch (err) {
+      console.error("Failed to write to database error_logs:", err);
+    }
+  } else {
+    try {
+      const data = readJson() as any;
+      if (!data.errorLogs) data.errorLogs = [];
+      data.errorLogs.push({
+        id,
+        timestamp: new Date().toISOString(),
+        userId,
+        errorMessage: errorMessage,
+        errorStack: errorStack || "",
+        context: context || ""
+      });
+      writeJson(data);
+      console.log(`[logError] Error logged in JSON successfully: ${errorMessage}`);
+    } catch (err) {
+      console.error("Failed to write to JSON error_logs:", err);
+    }
+  }
+};
+
+export const getErrorLogs = async (): Promise<ErrorLog[]> => {
+  const pgPool = getPool();
+  if (pgPool) {
+    try {
+      const res = await pgPool.query(
+        `SELECT id, timestamp, user_id as "userId", error_message as "errorMessage", error_stack as "errorStack", context 
+         FROM error_logs ORDER BY timestamp DESC LIMIT 200`
+      );
+      return res.rows.map(r => ({
+        id: r.id,
+        timestamp: r.timestamp,
+        userId: r.userId,
+        errorMessage: r.errorMessage,
+        errorStack: r.errorStack,
+        context: r.context
+      }));
+    } catch (err) {
+      console.error("Failed to read error_logs from DB:", err);
+      return [];
+    }
+  } else {
+    const data = readJson() as any;
+    const logs = data.errorLogs || [];
+    return [...logs].sort((a: any, b: any) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+  }
+};
+
+export const clearErrorLogs = async (): Promise<void> => {
+  const pgPool = getPool();
+  if (pgPool) {
+    try {
+      await pgPool.query("DELETE FROM error_logs");
+    } catch (err) {
+      console.error("Failed to clear error_logs in DB:", err);
+    }
+  } else {
+    const data = readJson() as any;
+    data.errorLogs = [];
     writeJson(data);
   }
 };

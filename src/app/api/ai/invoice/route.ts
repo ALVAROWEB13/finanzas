@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { logError } from "@/lib/db";
 
 export const maxDuration = 60; // Incrementar el tiempo de ejecución en Vercel a 60 segundos (evita error 503)
 
@@ -152,6 +153,12 @@ Devuelve SOLO el JSON sin texto adicional ni bloques de código.`
 
   } catch (err: any) {
     console.error("[invoice] Error:", err.message);
+    const userId = req.headers.get("x-user-id") || "anon";
+    try {
+      await logError(userId, err.message, err.stack, "API_AI_INVOICE");
+    } catch (logErr) {
+      console.error("Failed to write error log:", logErr);
+    }
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }

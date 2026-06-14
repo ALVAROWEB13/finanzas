@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { initDb, getTransactions, addTransaction, deleteTransaction, Transaction } from "@/lib/db";
+import { initDb, getTransactions, addTransaction, deleteTransaction, Transaction, logError } from "@/lib/db";
 import { authenticateRequest } from "@/lib/auth";
 
 // API handler for GET, POST, and DELETE transactions
@@ -13,6 +13,7 @@ export async function GET(req: Request) {
     return NextResponse.json(transactions);
   } catch (err: any) {
     console.error("API GET Transactions failed:", err);
+    try { await logError(auth.userId, err.message, err.stack, "API_TRANSACTIONS_GET"); } catch(e){}
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }
@@ -31,6 +32,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ success: true, transaction: body });
   } catch (err: any) {
     console.error("API POST Transaction failed:", err);
+    try { await logError(auth.userId, err.message, err.stack, "API_TRANSACTIONS_POST"); } catch(e){}
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }
@@ -50,6 +52,7 @@ export async function DELETE(req: Request) {
     return NextResponse.json({ success: true });
   } catch (err: any) {
     console.error("API DELETE Transaction failed:", err);
+    try { await logError(auth.userId, err.message, err.stack, "API_TRANSACTIONS_DELETE"); } catch(e){}
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }

@@ -364,6 +364,11 @@ export default function TobiramaFinancialOS() {
   const [aiTips, setAiTips] = useState<{titulo: string; consejo: string; gravedad: "INFO" | "WARNING" | "SUCCESS"}[]>([]);
   const [isLoadingTips, setIsLoadingTips] = useState(false);
 
+  // Error Logs States for Admin
+  const [errorLogs, setErrorLogs] = useState<any[]>([]);
+  const [isLoadingLogs, setIsLoadingLogs] = useState(false);
+  const [expandedLogId, setExpandedLogId] = useState<string | null>(null);
+
   // --- TERMINAL LOGS STATE (Optimized to match screen 1) ---
   const [terminalInput, setTerminalInput] = useState("");
   const [terminalLogs, setTerminalLogs] = useState<string[]>([
@@ -1890,6 +1895,41 @@ export default function TobiramaFinancialOS() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // --- ADMIN ERROR LOGS ---
+  const fetchErrorLogs = async () => {
+    setIsLoadingLogs(true);
+    try {
+      const res = await fetch("/api/admin/logs", {
+        headers: getAuthHeader(),
+      });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      if (Array.isArray(data)) {
+        setErrorLogs(data);
+      }
+    } catch (err) {
+      console.error("Error al cargar logs de errores:", err);
+    } finally {
+      setIsLoadingLogs(false);
+    }
+  };
+
+  const handleClearLogs = async () => {
+    if (!window.confirm("⚠️ ¿Estás seguro de que deseas vaciar todos los logs de errores de forma irreversible?")) return;
+    try {
+      const res = await fetch("/api/admin/logs", {
+        method: "DELETE",
+        headers: getAuthHeader(),
+      });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      setErrorLogs([]);
+      showToast("📋 Logs de errores vaciados.", "success");
+    } catch (err: any) {
+      showToast(`Error al vaciar logs: ${err.message}`, "warning");
+    }
+  };
+
   // --- GOOGLE GEMINI AI COACHING TIPS ---
   const loadAiTips = async () => {
     setIsLoadingTips(true);
@@ -1927,12 +1967,15 @@ export default function TobiramaFinancialOS() {
     }
   };
 
-  // Auto-load AI Tips on dashboard entry
+  // Auto-load AI Tips on dashboard entry and Error Logs on audit entry
   useEffect(() => {
     if (activeView === "dashboard" && aiTips.length === 0) {
       loadAiTips();
     }
-  }, [activeView]);
+    if (activeView === "audit" && currentUser?.role === "admin") {
+      fetchErrorLogs();
+    }
+  }, [activeView, currentUser]);
 
   // Terminal commands handling
   const handleTerminalSubmit = (e: React.FormEvent) => {
@@ -3780,31 +3823,109 @@ export default function TobiramaFinancialOS() {
                   </div>
                 </div>
 
-                {/* Database Control Panel */}
+                {/* Database Control Panel & Error Logs for Admin */}
                 {currentUser?.role === "admin" && (
-                  <div className="glass-panel rounded-2xl p-6 bg-[#0a0b0d]/50 border-white/[0.04] mt-6 space-y-4">
-                    <div className="flex justify-between items-center border-b border-white/[0.04] pb-2">
-                      <div>
-                        <span className="text-[12px] text-slate-500 uppercase tracking-widest font-mono block font-semibold">PANEL ADMINISTRATIVO</span>
-                        <h4 className="text-sm font-bold text-white mt-1 uppercase tracking-wider">MANTENIMIENTO DE BASE DE DATOS</h4>
+                  <>
+                    <div className="glass-panel rounded-2xl p-6 bg-[#0a0b0d]/50 border-white/[0.04] mt-6 space-y-4">
+                      <div className="flex justify-between items-center border-b border-white/[0.04] pb-2">
+                        <div>
+                          <span className="text-[12px] text-slate-500 uppercase tracking-widest font-mono block font-semibold">PANEL ADMINISTRATIVO</span>
+                          <h4 className="text-sm font-bold text-white mt-1 uppercase tracking-wider">MANTENIMIENTO DE BASE DE DATOS</h4>
+                        </div>
+                        <span className="text-[12px] text-slate-500 font-mono">
+                          Estado: <span className="text-emerald-400 font-bold">CONECTADO</span>
+                        </span>
                       </div>
-                      <span className="text-[12px] text-slate-500 font-mono">
-                        Estado: <span className="text-emerald-400 font-bold">CONECTADO</span>
-                      </span>
+
+                      <div className="flex flex-col sm:flex-row gap-4 items-center justify-between">
+                        <p className="text-xs text-slate-400 max-w-lg leading-normal font-mono">
+                          Para limpiar el sistema y comenzar de cero, puedes restablecer la base de datos. Esto eliminará de forma irreversible todas las transacciones registradas y reestablecerá los presupuestos de las categorías base a $0.
+                        </p>
+                        <button
+                          type="button"
+                          onClick={handleResetDb}
+                          className="px-5 py-3 rounded-xl bg-red-650/10 hover:bg-red-650/20 border border-red-500/25 hover:border-red-500/40 text-red-400 hover:text-red-300 font-bold text-xs uppercase tracking-wider transition-all cursor-pointer flex-shrink-0"
+                        >
+                          Restablecer Sistema (Borrar Todo) ⚠️
+                        </button>
+                      </div>
                     </div>
 
-                    <div className="flex flex-col sm:flex-row gap-4 items-center justify-between">
-                      <p className="text-xs text-slate-400 max-w-lg leading-normal font-mono">
-                        Para limpiar el sistema y comenzar de cero, puedes restablecer la base de datos. Esto eliminará de forma irreversible todas las transacciones registradas y reestablecerá los presupuestos de las categorías base a $0.
-                      </p>
-                      <button
-                        onClick={handleResetDb}
-                        className="px-5 py-3 rounded-xl bg-red-650/10 hover:bg-red-650/20 border border-red-500/25 hover:border-red-500/40 text-red-400 hover:text-red-300 font-bold text-xs uppercase tracking-wider transition-all cursor-pointer flex-shrink-0"
-                      >
-            Restablecer Sistema (Borrar Todo) ⚠️
-                      </button>
+                    {/* Error Logs Panel for Admin */}
+                    <div className="glass-panel rounded-2xl p-6 bg-[#0a0b0d]/50 border-white/[0.04] mt-6 space-y-4">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-white/[0.04] pb-3">
+                        <div>
+                          <span className="text-[12px] text-slate-500 uppercase tracking-widest font-mono block font-semibold">DIAGNÓSTICO DEL SISTEMA</span>
+                          <h4 className="text-sm font-bold text-white mt-1 uppercase tracking-wider">REGISTRO DE ERRORES (LOGS)</h4>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={fetchErrorLogs}
+                            disabled={isLoadingLogs}
+                            className="px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 text-slate-300 hover:text-white font-mono text-[10px] uppercase tracking-wider transition-all cursor-pointer disabled:opacity-50"
+                          >
+                            {isLoadingLogs ? "Cargando..." : "Actualizar 🔄"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleClearLogs}
+                            disabled={errorLogs.length === 0}
+                            className="px-3 py-1.5 rounded-lg bg-red-500/10 border border-red-500/20 hover:bg-red-500/20 text-red-400 hover:text-red-300 font-mono text-[10px] uppercase tracking-wider transition-all cursor-pointer disabled:opacity-30 disabled:pointer-events-none"
+                          >
+                            Vaciar Logs 🗑️
+                          </button>
+                        </div>
+                      </div>
+
+                      {errorLogs.length === 0 ? (
+                        <p className="text-xs text-slate-500 font-mono italic p-3 bg-black/20 rounded-xl text-center">
+                          ✓ No se han registrado errores en el sistema. Todo funciona correctamente.
+                        </p>
+                      ) : (
+                        <div className="space-y-2 max-h-[350px] overflow-y-auto pr-1 scrollbar-thin">
+                          {errorLogs.map((log) => {
+                            const isExpanded = expandedLogId === log.id;
+                            const dateObj = new Date(log.timestamp);
+                            const dateStr = dateObj.toLocaleDateString();
+                            const timeStr = dateObj.toLocaleTimeString();
+                            return (
+                              <div key={log.id} className="bg-black/40 border border-white/[0.03] rounded-xl p-3 font-mono text-xs transition-all hover:border-white/[0.06]">
+                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 text-slate-500 text-[10px] mb-1.5">
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <span className="bg-blue-500/10 text-blue-400 border border-blue-500/20 px-1.5 py-0.5 rounded text-[9px] font-bold">
+                                      {log.context || "SYSTEM"}
+                                    </span>
+                                    <span>Usuario: <strong className="text-slate-300">{log.userId}</strong></span>
+                                  </div>
+                                  <span>{dateStr} {timeStr}</span>
+                                </div>
+                                <div className="text-red-400 font-bold break-words">
+                                  {log.errorMessage}
+                                </div>
+                                {log.errorStack && (
+                                  <div className="mt-2 pt-2 border-t border-white/[0.03]">
+                                    <button
+                                      type="button"
+                                      onClick={() => setExpandedLogId(isExpanded ? null : log.id)}
+                                      className="text-slate-500 hover:text-slate-350 text-[10px] underline cursor-pointer"
+                                    >
+                                      {isExpanded ? "Ocultar traza de error ▲" : "Ver traza de error (Stack trace) ▼"}
+                                    </button>
+                                    {isExpanded && (
+                                      <pre className="mt-1.5 p-2 bg-[#050505] border border-white/[0.05] rounded-lg text-[10px] text-slate-400 overflow-x-auto leading-normal whitespace-pre-wrap max-h-40">
+                                        {log.errorStack}
+                                      </pre>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
                     </div>
-                  </div>
+                  </>
                 )}
               </motion.div>
             )}
