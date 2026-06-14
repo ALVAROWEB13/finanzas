@@ -1818,30 +1818,160 @@ export default function TobiramaFinancialOS() {
 
       setScanProgress(20);
 
-      const formData = new FormData();
-      formData.append("file", file);
-
-      // La ruta /api/ai/invoice no requiere auth — solo procesa la imagen
-      const res = await fetch("/api/ai/invoice", {
-        method: "POST",
-        body: formData
+      // Convertir el archivo comprimido a base64
+      const base64Promise = new Promise<string>((resolveBase64, rejectBase64) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const result = reader.result as string;
+          const base64 = result.split(",")[1];
+          resolveBase64(base64);
+        };
+        reader.onerror = (err) => rejectBase64(err);
+        reader.readAsDataURL(file);
       });
+      const base64Data = await base64Promise;
 
-      // Si hay error HTTP de tamaño o timeout
-      if (res.status === 413) {
-        throw new Error("La imagen es demasiado pesada para el servidor. Intenta recortar la foto.");
+      setScanProgress(35);
+
+      // Obtener la API Key desde nuestro backend seguro
+      const keyRes = await fetch("/api/ai/key", {
+        headers: getAuthHeader()
+      });
+      const keyData = await keyRes.json();
+      if (keyData.error) throw new Error(keyData.error);
+      const apiKey = keyData.apiKey;
+
+      setScanProgress(50);
+
+      const today = new Date().toISOString().split("T")[0];
+
+      // Llamar a Gemini directamente desde el navegador para evadir bloqueos de IPs de Vercel
+      const models = ["gemini-2.5-flash", "gemini-3.5-flash", "gemini-2.5-flash-lite", "gemini-3.1-flash-lite"];
+      let data: any = null;
+      let lastErrorMsg = "";
+
+      for (const model of models) {
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+        console.log(`[OCR Client] Intentando con el modelo: ${model}`);
+        try {
+          // Reintentamos una vez si hay un 429 transitorio
+          let res: Response | null = null;
+          let delay = 1000;
+          for (let attempt = 0; attempt < 2; attempt++) {
+            res = await fetch(url, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                system_instruction: {
+                  parts: [{
+                    text: `Eres un sistema experto de OCR para facturas, recibos y comprobantes de pago de Colombia y Latinoamérica (Nequi, Daviplata, Bancolombia, Éxito, D1, etc.).
+Tu tarea es EXTRAER datos reales y visibles. JAMÁS inventes valores.
+Evalúa primero si la imagen tiene calidad suficiente para escanear (buena iluminación, texto legible, imagen enfocada).`
+                  }]
+                },
+                contents: [{
+                  parts: [
+                    { inlineData: { mimeType: "image/jpeg", data: base64Data } },
+                    {
+                      text: `Analiza esta imagen y responde con un JSON con estos 6 campos:
+
+1. calidad_imagen: Evalúa la calidad de la imagen. Usa exactamente uno de estos valores:
+   - "BUENA": imagen clara, bien iluminada, texto nítido y legible
+   - "REGULAR": imagen algo borrosa u oscura pero los datos principales son legibles
+   - "MALA": imagen muy oscura, borrosa, mal enfocada o el texto no se puede leer
+
+2. comercio: Nombre del establecimiento, empresa o persona que recibe el pago (ej: "Almacenes Éxito", "D1", "Nequi Juan Pérez"). Si no se ve, usa "Comercio".
+
+3. total: Monto total pagado como número ENTERO en pesos COP.
+   REGLA IMPORTANTE para decimales colombianos: "50.000,00" → 50000 | "1.250.000" → 1250000 | "14500.00" → 14500
+   Solo dígitos. Sin $, puntos de miles, comas ni letras. Si no es legible: 0.
+
+4. fecha: Fecha de la transacción en formato YYYY-MM-DD.
+   Convierte fechas en español: "8 de junio de 2026" → "2026-06-08", "08/Jun/2026" → "2026-06-08"
+   Si no hay fecha legible: "${today}"
+
+5. categoria: Elige UNA de estas categorías según el tipo de comercio o concepto:
+   - Alimentación (supermercados, restaurantes, D1, Éxito, Ara, Jumbo, domicilios)
+   - Transporte (gasolina, taxi, Uber, bus, peajes, parqueadero)
+   - Servicios (luz, agua, gas, internet, celular, arriendo)
+   - Entretenimiento (cine, Netflix, Spotify, bares, juegos)
+   - Salud (droguería, farmacia, médico, laboratorio)
+   - Educación (colegio, universidad, cursos, libros)
+   - Vivienda (ferretería, decoración, mantenimiento hogar)
+   - Ahorro / Reserva (transferencias a ahorros)
+   - Ingresos (dinero recibido, consignaciones)
+
+6. descripcion: Descripción corta del gasto (máx 60 caracteres). Ej: "Compra víveres D1", "Gasolina carro".
+
+Devuelve SOLO el JSON sin texto adicional ni bloques de código.`
+                    }
+                  ]
+                }],
+                generationConfig: {
+                  responseMimeType: "application/json",
+                  responseSchema: {
+                    type: "object",
+                    properties: {
+                      calidad_imagen: { type: "string", enum: ["BUENA", "REGULAR", "MALA"] },
+                      comercio:       { type: "string" },
+                      total:          { type: "integer" },
+                      fecha:          { type: "string" },
+                      categoria:      { type: "string" },
+                      descripcion:    { type: "string" }
+                    },
+                    required: ["calidad_imagen", "comercio", "total", "fecha", "categoria", "descripcion"]
+                  }
+                }
+              })
+            });
+
+            if (res.status === 429) {
+              if (attempt < 1) {
+                console.warn(`[OCR Client] 429 recibido. Reintentando en ${delay}ms...`);
+                await new Promise((r) => setTimeout(r, delay));
+                delay *= 2.5;
+                continue;
+              }
+            }
+            break;
+          }
+
+          if (res && res.ok) {
+            const resJson = await res.json();
+            const part = resJson.candidates?.[0]?.content?.parts?.[0];
+            if (!part) throw new Error("No se pudo extraer una respuesta válida del escáner");
+
+            let parsed: any;
+            if (typeof part.text === "string") {
+              parsed = JSON.parse(part.text);
+            } else {
+              parsed = part;
+            }
+            data = parsed;
+            console.log(`[OCR Client] Éxito con el modelo: ${model}`, data);
+            break;
+          } else {
+            const status = res ? res.status : 500;
+            const errText = res ? await res.text() : "No response";
+            lastErrorMsg = `Modelo ${model} falló con estado ${status}: ${errText}`;
+            console.warn(`[OCR Client] ${lastErrorMsg}`);
+          }
+        } catch (err: any) {
+          lastErrorMsg = `Error llamando a ${model}: ${err.message}`;
+          console.warn(`[OCR Client] ${lastErrorMsg}`);
+        }
       }
 
-      const data = await res.json();
+      if (!data) {
+        throw new Error(lastErrorMsg || "Todos los modelos de procesamiento fallaron.");
+      }
 
-      // Error especial: imagen de mala calidad (detectado por Gemini)
-      if (data.error === "imagen_mala") {
+      // Error especial: imagen de mala calidad (detectado por el escáner)
+      if (data.calidad_imagen === "MALA") {
         setScanProgress(0);
         showToast("📸 " + (data.mensaje || "La foto no tiene suficiente calidad. Intenta con mejor luz y enfoque."), "warning");
         return;
       }
-
-      if (data.error) throw new Error(data.error);
 
       setScanProgress(100);
       setScanResult(data);
@@ -1884,6 +2014,24 @@ export default function TobiramaFinancialOS() {
       }
       showToast(`⚠️ Error al escanear: ${userFriendlyMsg}`, "warning");
       console.error("[OCR]", err);
+
+      // Registrar error en la base de datos
+      try {
+        await fetch("/api/admin/logs", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...getAuthHeader()
+          },
+          body: JSON.stringify({
+            message: err.message,
+            stack: err.stack,
+            context: "CLIENT_OCR"
+          })
+        });
+      } catch (logErr) {
+        console.error("No se pudo registrar el log de error en el servidor:", logErr);
+      }
 
       // Revocar y limpiar la preview local para restablecer la zona de carga y que no se bloquee la UI
       if (localUrl) {
