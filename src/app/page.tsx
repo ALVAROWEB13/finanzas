@@ -1615,21 +1615,58 @@ export default function TobiramaFinancialOS() {
 
   // --- UTILS PARA ESCÁNER: COMPRESIÓN Y LUMINOSIDAD ---
   const compressAndAnalyzeImage = (file: File): Promise<{ file: File; isDark: boolean }> => {
-    return new Promise((resolve) => {
+    return new Promise(async (resolve) => {
+      let activeFile = file;
+
+      // 1. Si es HEIC/HEIF, intentar convertirlo en el cliente usando heic2any desde CDN
+      if (file.name.toLowerCase().endsWith(".heic") || file.name.toLowerCase().endsWith(".heif")) {
+        try {
+          // Cargar heic2any dinámicamente si no está ya cargado en el objeto window
+          if (!(window as any).heic2any) {
+            const script = document.createElement("script");
+            script.src = "https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js";
+            const scriptLoaded = new Promise((res, rej) => {
+              script.onload = res;
+              script.onerror = rej;
+            });
+            document.head.appendChild(script);
+            await scriptLoaded;
+          }
+
+          if ((window as any).heic2any) {
+            const converted = await (window as any).heic2any({
+              blob: file,
+              toType: "image/jpeg",
+              quality: 0.70
+            });
+            const convertedBlob = Array.isArray(converted) ? converted[0] : converted;
+            activeFile = new File([convertedBlob], file.name.replace(/\.[^/.]+$/, "") + ".jpg", {
+              type: "image/jpeg",
+              lastModified: Date.now()
+            });
+          }
+        } catch (heicErr) {
+          console.error("Error al convertir HEIC con heic2any:", heicErr);
+        }
+      }
+
+      // 2. Comprimir usando Canvas a un tamaño muy compacto (máx 800px, 70% calidad)
       const img = new Image();
-      img.src = URL.createObjectURL(file);
+      const objectUrl = URL.createObjectURL(activeFile);
+      img.src = objectUrl;
+
       img.onload = () => {
-        URL.revokeObjectURL(img.src);
         const canvas = document.createElement("canvas");
         const ctx = canvas.getContext("2d");
         if (!ctx) {
-          resolve({ file, isDark: false });
+          URL.revokeObjectURL(objectUrl);
+          resolve({ file: activeFile, isDark: false });
           return;
         }
 
-        // Redimensionar si supera 1024px para mantener el OCR rápido e instantáneo
-        const MAX_WIDTH = 1024;
-        const MAX_HEIGHT = 1024;
+        // Redimensionar a máx 800px para garantizar tamaño mínimo y velocidad de red
+        const MAX_WIDTH = 800;
+        const MAX_HEIGHT = 800;
         let width = img.width;
         let height = img.height;
 
@@ -1649,45 +1686,45 @@ export default function TobiramaFinancialOS() {
         canvas.height = height;
         ctx.drawImage(img, 0, 0, width, height);
 
-        // Analizar brillo promedio
+        // Analizar luminosidad
+        let isDark = false;
         try {
           const imgData = ctx.getImageData(0, 0, width, height);
           const data = imgData.data;
           let totalLuminance = 0;
           const pixelCount = data.length / 4;
-          
           for (let i = 0; i < data.length; i += 4) {
             const r = data[i];
             const g = data[i + 1];
             const b = data[i + 2];
-            // Fórmula estándar de luminancia
             const lum = 0.299 * r + 0.587 * g + 0.114 * b;
             totalLuminance += lum;
           }
           const avgLuminance = totalLuminance / pixelCount;
-          // Si el brillo promedio es < 50, se considera muy oscura
-          const isDark = avgLuminance < 50;
-
-          // Comprimir como JPEG con 82% de calidad (OCR perfecto y archivo liviano ~150-200KB)
-          canvas.toBlob((blob) => {
-            if (blob) {
-              const compressedFile = new File([blob], file.name.replace(/\.[^/.]+$/, "") + ".jpg", {
-                type: "image/jpeg",
-                lastModified: Date.now(),
-              });
-              resolve({ file: compressedFile, isDark });
-            } else {
-              resolve({ file, isDark });
-            }
-          }, "image/jpeg", 0.82);
-
-        } catch (err) {
-          console.error("Error al procesar canvas:", err);
-          resolve({ file, isDark: false });
+          isDark = avgLuminance < 50;
+        } catch (e) {
+          console.error("Error de canvas en luminosidad:", e);
         }
+
+        // Calidad 70% para obtener un archivo súper liviano (aprox 50KB-80KB)
+        canvas.toBlob((blob) => {
+          URL.revokeObjectURL(objectUrl);
+          if (blob) {
+            const compressedFile = new File([blob], activeFile.name.replace(/\.[^/.]+$/, "") + ".jpg", {
+              type: "image/jpeg",
+              lastModified: Date.now(),
+            });
+            resolve({ file: compressedFile, isDark });
+          } else {
+            resolve({ file: activeFile, isDark });
+          }
+        }, "image/jpeg", 0.70);
       };
+
       img.onerror = () => {
-        resolve({ file, isDark: false });
+        URL.revokeObjectURL(objectUrl);
+        console.error("Error al cargar imagen en canvas");
+        resolve({ file: activeFile, isDark: false });
       };
     });
   };
