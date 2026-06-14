@@ -53,7 +53,7 @@ export async function POST(req: Request) {
     const body = {
       system_instruction: {
         parts: [{
-          text: `Eres un sistema experto de OCR para facturas, recibos y comprobantes de pago de Colombia y Latinoamérica (Nequi, Daviplata, Bancolombia, Éxito, D1, etc.).
+          text: `Eres un sistema experto de OCR para facturas, recibos y comprobantes de pago de Colombia y Latinoamérica (Nequi, Daviplata, Bancolombia, Éxito, D1, Jumbo, Ara, etc.).
 Tu tarea es EXTRAER datos reales y visibles. JAMÁS inventes valores.
 Evalúa primero si la imagen tiene calidad suficiente para escanear (buena iluminación, texto legible, imagen enfocada).`
         }]
@@ -69,18 +69,22 @@ Evalúa primero si la imagen tiene calidad suficiente para escanear (buena ilumi
    - "REGULAR": imagen algo borrosa u oscura pero los datos principales son legibles
    - "MALA": imagen muy oscura, borrosa, mal enfocada o el texto no se puede leer
 
-2. comercio: Nombre del establecimiento, empresa o persona que recibe el pago (ej: "Almacenes Éxito", "D1", "Nequi Juan Pérez"). Si no se ve, usa "Comercio".
+2. comercio: Nombre comercial o marca del establecimiento (ej: "Jumbo", "Metro", "Éxito", "D1", "Ara", "Olímpica", "Nequi Juan Pérez", "Daviplata").
+   REGLA IMPORTANTE: Prefiere la marca comercial (ej. "Jumbo" o "Metro") antes que la razón social legal (ej. "Cencosud Colombia S.A."). Si no se ve ningún nombre comercial, usa "Comercio".
 
-3. total: Monto total pagado como número ENTERO en pesos COP.
-   REGLA IMPORTANTE para decimales colombianos: "50.000,00" → 50000 | "1.250.000" → 1250000 | "14500.00" → 14500
-   Solo dígitos. Sin $, puntos de miles, comas ni letras. Si no es legible: 0.
+3. total: Monto total real de la compra como número ENTERO en pesos COP.
+   REGLAS CRÍTICAS PARA EL TOTAL:
+   - Extrae el neto real pagado por el cliente. Busca etiquetas como "TOTAL A PAGAR", "TOTAL NETO", "VALOR A PAGAR", "NETO", o "TOTAL".
+   - NO te confundas con los subtotales ("SUBTOTAL"), los impuestos ("IVA"), el dinero recibido ("SU PAGO", "EFECTIVO", "RECIBIDO"), el cambio devuelto ("CAMBIO", "VUELTAS"), ni con los descuentos ("AHORRO", "Usted Ahorró").
+   - Ejemplo de decimales colombianos: "115.440,00" → 115440 | "1.250.000" → 1250000 | "14500.00" → 14500
+   - Solo dígitos. Sin $, puntos de miles, comas ni letras. Si no es legible: 0.
 
-4. fecha: Fecha de la transacción en formato YYYY-MM-DD.
+4. fecha: Fecha real de la transacción en formato YYYY-MM-DD.
    Convierte fechas en español: "8 de junio de 2026" → "2026-06-08", "08/Jun/2026" → "2026-06-08"
    Si no hay fecha legible: "HOY"
 
 5. categoria: Elige UNA de estas categorías según el tipo de comercio o concepto:
-   - Alimentación (supermercados, restaurantes, D1, Éxito, Ara, Jumbo, domicilios)
+   - Alimentación (supermercados, restaurantes, D1, Éxito, Ara, Jumbo, Metro, Olímpica, domicilios)
    - Transporte (gasolina, taxi, Uber, bus, peajes, parqueadero)
    - Servicios (luz, agua, gas, internet, celular, arriendo)
    - Entretenimiento (cine, Netflix, Spotify, bares, juegos)
@@ -90,7 +94,7 @@ Evalúa primero si la imagen tiene calidad suficiente para escanear (buena ilumi
    - Ahorro / Reserva (transferencias a ahorros)
    - Ingresos (dinero recibido, consignaciones)
 
-6. descripcion: Descripción corta del gasto (máx 60 caracteres). Ej: "Compra víveres D1", "Gasolina carro".
+6. descripcion: Descripción corta del gasto (máx 60 caracteres). Ej: "Compra víveres Jumbo", "Gasolina carro".
 
 Devuelve SOLO el JSON sin texto adicional ni bloques de código.`
           }
