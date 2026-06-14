@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { Analytics } from "@vercel/analytics/next";
 
 export const metadata: Metadata = {
   title: "Tobirama Financial OS",
@@ -16,7 +17,10 @@ export default function RootLayout({
       lang="es"
       className="h-full antialiased"
     >
-      <body className="min-h-full flex flex-col bg-black text-[#f8fafc]">{children}</body>
+      <body className="min-h-full flex flex-col bg-black text-[#f8fafc]">
+        {children}
+        <Analytics />
+      </body>
     </html>
   );
 }
