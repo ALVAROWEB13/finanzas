@@ -1721,6 +1721,15 @@ export default function TobiramaFinancialOS() {
         showToast("⚠️ Foto muy oscura: Asegúrate de tener buena luz para que la IA lea bien los datos.", "warning");
       }
 
+      // Validar tamaño antes de subir (límite de Vercel es 4.5MB)
+      if (file.size > 4.2 * 1024 * 1024) {
+        throw new Error(
+          file.name.toLowerCase().endsWith(".heic")
+            ? "El formato HEIC de alta resolución no se pudo comprimir en tu navegador. Intenta recortar la foto en tu galería primero, o cámbiala a formato JPG/PNG."
+            : "La imagen es demasiado grande (límite de 4MB). Por favor, intenta recortar la foto o tomarla con una resolución más baja."
+        );
+      }
+
       setScanProgress(20);
 
       const formData = new FormData();
@@ -1731,6 +1740,11 @@ export default function TobiramaFinancialOS() {
         method: "POST",
         body: formData
       });
+
+      // Si hay error HTTP de tamaño o timeout
+      if (res.status === 413) {
+        throw new Error("La imagen es demasiado pesada para el servidor. Intenta recortar la foto.");
+      }
 
       const data = await res.json();
 
@@ -1750,7 +1764,22 @@ export default function TobiramaFinancialOS() {
       if (data.total && data.total > 0) setQuickAmount(formatNumberCOP(data.total));
       if (data.comercio && data.descripcion) setQuickDescription(`${data.comercio}: ${data.descripcion}`);
       else if (data.comercio) setQuickDescription(data.comercio);
-      if (data.categoria) setQuickCategory(data.categoria as Category);
+      
+      // Auto-categorización avanzada case-insensitive
+      if (data.categoria) {
+        const detectedCat = data.categoria.trim();
+        const matchedCategory = CATEGORIES.find(
+          (c) => c.toLowerCase() === detectedCat.toLowerCase()
+        );
+        if (matchedCategory) {
+          setQuickCategory(matchedCategory);
+          setCustomCategory("");
+        } else {
+          setQuickCategory("Otra...");
+          setCustomCategory(detectedCat);
+        }
+      }
+
       setQuickType("Gasto Extra");
       if (data.fecha) setQuickDate(data.fecha);
       setScanSuccess(true);
@@ -1761,7 +1790,11 @@ export default function TobiramaFinancialOS() {
     } catch (err: any) {
       setScanProgress(0);
       const msg = err?.message || "Error desconocido";
-      showToast(`Error al escanear: ${msg.slice(0, 90)}`, "warning");
+      let userFriendlyMsg = msg;
+      if (msg.includes("Load failed") || msg.includes("Failed to fetch") || msg.includes("body size limit") || msg.includes("413")) {
+        userFriendlyMsg = "La foto es muy pesada o la conexión falló. Intenta recortar la foto, tomarla más de cerca con buena luz, o reducir la resolución de tu cámara.";
+      }
+      showToast(`⚠️ Error al escanear: ${userFriendlyMsg}`, "warning");
       console.error("[OCR]", err);
     } finally {
       clearInterval(progressInterval);
@@ -2188,6 +2221,13 @@ export default function TobiramaFinancialOS() {
         {/* --- HEADER --- */}
         <header className="sticky top-0 bg-black/90 backdrop-blur-md border-b border-white/[0.04] px-6 py-4 flex items-center justify-between z-10">
           <div className="flex items-center gap-4">
+            {/* Botón de menú hamburguesa para mobile */}
+            <button
+              onClick={() => setIsSidebarOpen(true)}
+              className="p-1 rounded-lg bg-white/5 border border-white/[0.08] text-slate-400 hover:text-white md:hidden transition-all cursor-pointer"
+            >
+              <Menu className="h-5 w-5" />
+            </button>
             <div className="flex items-center gap-8">
               <h2 className="text-sm font-bold tracking-widest text-white uppercase">Tobirama OS</h2>
               
@@ -2255,7 +2295,7 @@ export default function TobiramaFinancialOS() {
                 const prevDate = new Date(year, month - 2, 1);
                 setSelectedMonth(`${prevDate.getFullYear()}-${String(prevDate.getMonth() + 1).padStart(2, "0")}`);
               }}
-              className="p-1.5 rounded-lg bg-[#090a0c] border border-white/[0.04] text-slate-400 hover:text-white text-[12px] font-bold cursor-pointer transition-colors"
+              className="p-2 px-2.5 rounded-lg bg-[#090a0c] border border-white/[0.04] text-slate-400 hover:text-white text-[14px] font-bold cursor-pointer transition-colors"
             >
               ◀
             </button>
@@ -2273,7 +2313,7 @@ export default function TobiramaFinancialOS() {
                 const nextDate = new Date(year, month, 1);
                 setSelectedMonth(`${nextDate.getFullYear()}-${String(nextDate.getMonth() + 1).padStart(2, "0")}`);
               }}
-              className="p-1.5 rounded-lg bg-[#090a0c] border border-white/[0.04] text-slate-400 hover:text-white text-[12px] font-bold cursor-pointer transition-colors"
+              className="p-2 px-2.5 rounded-lg bg-[#090a0c] border border-white/[0.04] text-slate-400 hover:text-white text-[14px] font-bold cursor-pointer transition-colors"
             >
               ▶
             </button>
@@ -2956,7 +2996,7 @@ export default function TobiramaFinancialOS() {
                                 setVoiceParsedInfo(null);
                                 setVoiceText("");
                               }}
-                              className={`py-1.5 rounded-lg text-3xs font-bold uppercase tracking-wider font-mono transition-all cursor-pointer relative ${
+                              className={`py-2.5 rounded-lg text-[11px] font-bold uppercase tracking-wider font-mono transition-all cursor-pointer relative ${
                                 isSel ? "text-white" : "text-slate-555 hover:text-slate-350"
                               }`}
                             >
@@ -3149,17 +3189,45 @@ export default function TobiramaFinancialOS() {
 
                           {/* Barra de progreso mientras escanea */}
                           {isScanning && (
-                            <div className="space-y-2">
-                              {/* Preview de la imagen mientras carga */}
+                            <div className="space-y-3">
+                              {/* Preview de la imagen mientras carga con blur y spinner overlay */}
                               {invoicePreviewUrl && (
-                                <div className="rounded-xl overflow-hidden border border-white/[0.06] max-h-36">
+                                <div className="relative rounded-2xl overflow-hidden border border-white/[0.06] h-40 bg-black/65 flex items-center justify-center">
                                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                                  <img src={invoicePreviewUrl} alt="Escaneando..." className="w-full max-h-36 object-contain bg-black/60 opacity-60" />
+                                  <img 
+                                    src={invoicePreviewUrl} 
+                                    alt="Escaneando..." 
+                                    className="w-full h-full object-cover filter blur-[4px] opacity-45 absolute inset-0" 
+                                  />
+                                  <div className="relative z-10 flex flex-col items-center gap-3">
+                                    <div className="relative h-10 w-10">
+                                      {/* Doble anillo spinner */}
+                                      <div className="absolute inset-0 rounded-full border-2 border-white/10" />
+                                      <div className="absolute inset-0 rounded-full border-2 border-t-blue-500 animate-spin" />
+                                    </div>
+                                    <span className="text-[11px] font-mono text-blue-400 font-bold tracking-wider animate-pulse uppercase">
+                                      {scanProgress < 20 
+                                        ? "Comprimiendo" 
+                                        : scanProgress < 55 
+                                          ? "Enviando a Gemini" 
+                                          : scanProgress < 85 
+                                            ? "Extrayendo Datos" 
+                                            : "Clasificando"}
+                                    </span>
+                                  </div>
                                 </div>
                               )}
-                              <div className="flex justify-between text-[12px] font-mono text-slate-500">
-                                <span className="text-blue-400 animate-pulse">🔎 Analizando factura con IA...</span>
-                                <span>{Math.round(scanProgress)}%</span>
+                              <div className="flex justify-between text-[11px] font-mono text-slate-500 uppercase tracking-wide">
+                                <span className="text-slate-400 font-bold">
+                                  {scanProgress < 20 
+                                    ? "Reduciendo tamaño..." 
+                                    : scanProgress < 55 
+                                      ? "Subiendo imagen al servidor de IA..." 
+                                      : scanProgress < 85 
+                                        ? "Analizando texto y recibo..." 
+                                        : "Clasificando montos y categorías..."}
+                                </span>
+                                <span className="font-bold text-slate-300">{Math.round(scanProgress)}%</span>
                               </div>
                               <div className="h-1.5 w-full bg-zinc-900 rounded-full overflow-hidden">
                                 <motion.div
@@ -3168,7 +3236,6 @@ export default function TobiramaFinancialOS() {
                                   transition={{ duration: 0.4, ease: "easeOut" }}
                                 />
                               </div>
-                              <p className="text-[13px] text-slate-600 font-mono text-center">Extrayendo comercio, monto, fecha y categoría...</p>
                             </div>
                           )}
 
