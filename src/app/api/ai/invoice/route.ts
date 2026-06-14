@@ -74,14 +74,19 @@ Evalúa primero si la imagen tiene calidad suficiente para escanear (buena ilumi
 
 3. total: Monto total real de la compra como número ENTERO en pesos COP.
    REGLAS CRÍTICAS PARA EL TOTAL:
-   - Extrae el neto real pagado por el cliente. Busca etiquetas como "TOTAL A PAGAR", "TOTAL NETO", "VALOR A PAGAR", "NETO", o "TOTAL".
-   - NO te confundas con los subtotales ("SUBTOTAL"), los impuestos ("IVA"), el dinero recibido ("SU PAGO", "EFECTIVO", "RECIBIDO"), el cambio devuelto ("CAMBIO", "VUELTAS"), ni con los descuentos ("AHORRO", "Usted Ahorró").
-   - Ejemplo de decimales colombianos: "115.440,00" → 115440 | "1.250.000" → 1250000 | "14500.00" → 14500
+   - Extrae el neto real pagado por el cliente. Busca y cruza el valor en múltiples lugares del recibo: la línea de "TOTAL A PAGAR", la línea del método de pago (ej. "TARJ CRE/DEB", "EFECTIVO" o "PAGO ELECTRONICO") y la suma de base + IVA en el desglose de impuestos.
+   - REGLA DE VERIFICACIÓN ARITMÉTICA (CRÍTICA): Haz una suma mental rápida de los ítems individuales (restando los descuentos si los hay, como valores negativos) y contrástala con el total impreso. Esto te ayudará a resolver dígitos que parezcan borrosos o desgastados (por ejemplo, diferenciar si un número es un 5 o un 6, o si es un 3 o un 8) en impresoras térmicas.
+   - NO te confundas con los subtotales, los impuestos (IVA por separado), el dinero entregado por el cliente antes del cambio, el cambio devuelto ("VUELTAS" / "CAMBIO"), ni con el ahorro acumulado ("AHORRO" / "SU AHORRO").
+   - Ejemplo de decimales colombianos: "116.440,00" o "116,440" → 116440 | "1.250.000" → 1250000
    - Solo dígitos. Sin $, puntos de miles, comas ni letras. Si no es legible: 0.
 
-4. fecha: Fecha real de la transacción en formato YYYY-MM-DD.
-   Convierte fechas en español: "8 de junio de 2026" → "2026-06-08", "08/Jun/2026" → "2026-06-08"
-   Si no hay fecha legible: "HOY"
+4. fecha: Fecha real de la compra o transacción en formato YYYY-MM-DD.
+   REGLAS CRÍTICAS PARA LA FECHA:
+   - NO extraigas la fecha de la resolución de la DIAN (ej. "Resolución DIAN No... de 2009", "DIAN No... de Diciembre de 2023"). Esas fechas corresponden a la autorización de facturación, no a tu compra.
+   - NO extraigas fechas de vencimiento de promociones o puntos (ej. "Vence 20/03/2027").
+   - Busca la fecha real de la compra que suele estar al final del ticket junto a la hora, número de caja y cajero (ej. "20/03/2024 16:32"), o en el encabezado como fecha de emisión.
+   - Convierte fechas en español: "8 de junio de 2026" → "2026-06-08", "20/Mar/2024" → "2024-03-20".
+   - Si no hay fecha legible o es confusa, usa "HOY".
 
 5. categoria: Elige UNA de estas categorías según el tipo de comercio o concepto:
    - Alimentación (supermercados, restaurantes, D1, Éxito, Ara, Jumbo, Metro, Olímpica, domicilios)
